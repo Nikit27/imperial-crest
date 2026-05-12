@@ -188,6 +188,7 @@ header{background:var(--navy);padding:env(safe-area-inset-top,0) 0 0;position:st
 
   <nav class="bottom-nav">
     <button class="tab-btn active" id="tab-pnl" onclick="switchTab('pnl')"><span class="tab-icon">📊</span>P&L</button>
+    <button class="tab-btn" id="tab-dashboard" onclick="switchTab('dashboard')"><span class="tab-icon">📅</span>Dashboard</button>
     <button class="tab-btn" id="tab-prices" onclick="switchTab('prices')"><span class="tab-icon">📈</span>Prices</button>
     <button class="tab-btn" id="tab-journal" onclick="switchTab('journal')"><span class="tab-icon">📓</span>Journal</button>
     <button class="tab-btn" id="tab-settings" onclick="switchTab('settings')"><span class="tab-icon">⚙️</span>Settings</button>
@@ -265,30 +266,72 @@ const POSITIONS={
   ]
 };
 
-let fbData=null,pnlData=null,trades=[],db=null;
+const SAMPLE_TRADES=[
+  {"id": 1778000000000, "date": "2026-05-05", "closeDate": "2026-05-05", "product": "FCPO", "contract": "FCPO May27-Jul27 Calendar", "side": "Buy", "status": "Closed", "tradeType": "Spread", "lots": "3", "entryPrice": "32", "reason": "", "target": "", "stop": "", "exitPrice": "35.33", "pnl": "47.70", "learnings": ""},
+  {"id": 1778000000001, "date": "2026-05-05", "closeDate": "2026-05-05", "product": "FCPO", "contract": "FCPO Jul26", "side": "Sell", "status": "Closed", "tradeType": "Outright", "lots": "1", "entryPrice": "4635", "reason": "", "target": "", "stop": "", "exitPrice": "4632", "pnl": "13.82", "learnings": ""},
+  {"id": 1778000000002, "date": "2026-05-04", "closeDate": "2026-05-04", "product": "NG|HH", "contract": "FCPO Jun26", "side": "Buy", "status": "Closed", "tradeType": "Outright", "lots": "2", "entryPrice": "0.00750", "reason": "", "target": "", "stop": "", "exitPrice": "0.00850", "pnl": "9.44", "learnings": ""},
+  {"id": 1778000000003, "date": "2026-05-04", "closeDate": "2026-05-05", "product": "FCPO", "contract": "FCPO May27-Jul27 Calendar", "side": "Buy", "status": "Closed", "tradeType": "Spread", "lots": "1", "entryPrice": "34", "reason": "", "target": "37", "stop": "30", "exitPrice": "37", "pnl": "13.82", "learnings": ""},
+  {"id": 1778000000004, "date": "2026-05-04", "closeDate": "2026-05-04", "product": "FCPO", "contract": "FCPO Jul26", "side": "Sell", "status": "Closed", "tradeType": "Outright", "lots": "1", "entryPrice": "4627", "reason": "", "target": "4627", "stop": "4630", "exitPrice": "4626", "pnl": "1.22", "learnings": ""},
+  {"id": 1778000000005, "date": "2026-05-06", "closeDate": "2026-05-06", "product": "FCPO", "contract": "FCPO May27-Sep27 Calendar", "side": "Sell", "status": "Closed", "tradeType": "Spread", "lots": "5", "entryPrice": "54", "reason": "", "target": "52", "stop": "56", "exitPrice": "52", "pnl": "37.60", "learnings": ""},
+  {"id": 1778000000006, "date": "2026-05-06", "closeDate": "2026-05-06", "product": "FCPO", "contract": "FCPO Jul27-Sep27 Calendar", "side": "Sell", "status": "Closed", "tradeType": "Spread", "lots": "3", "entryPrice": "20", "reason": "", "target": "17", "stop": "25", "exitPrice": "17", "pnl": "41.46", "learnings": ""},
+  {"id": 1778000000007, "date": "2026-05-06", "closeDate": "", "product": "FCPO", "contract": "FCPO Jul27-Sep27 Calendar", "side": "Buy", "status": "Closed", "tradeType": "Spread", "lots": "5", "entryPrice": "16.8", "reason": "", "target": "20", "stop": "15", "exitPrice": "20", "pnl": "75.40", "learnings": ""},
+  {"id": 1778000000008, "date": "2026-05-05", "closeDate": "", "product": "NG|HH", "contract": "FCPO Jul26", "side": "Buy", "status": "Closed", "tradeType": "Outright", "lots": "10", "entryPrice": "0.00400", "reason": "", "target": "0.00500", "stop": "0.00300", "exitPrice": "0.00500", "pnl": "47.20", "learnings": ""},
+  {"id": 1778000000009, "date": "2026-05-06", "closeDate": "", "product": "FCPO", "contract": "FCPO Jul27-Sep27 Calendar", "side": "Buy", "status": "Closed", "tradeType": "Spread", "lots": "5", "entryPrice": "16.8", "reason": "", "target": "20", "stop": "15", "exitPrice": "19", "pnl": "43.90", "learnings": ""},
+  {"id": 1778000000010, "date": "2026-05-06", "closeDate": "", "product": "FCPO", "contract": "FCPO Jul27-Sep27 Calendar", "side": "Buy", "status": "Closed", "tradeType": "Spread", "lots": "10", "entryPrice": "14.5", "reason": "", "target": "17", "stop": "10", "exitPrice": "17", "pnl": "106.70", "learnings": ""},
+  {"id": 1778000000011, "date": "2026-05-07", "closeDate": "", "product": "FCPO", "contract": "FCPO Jul27-Sep27 Calendar", "side": "Sell", "status": "Closed", "tradeType": "Spread", "lots": "10", "entryPrice": "19", "reason": "", "target": "15", "stop": "22", "exitPrice": "14", "pnl": "264.20", "learnings": ""},
+  {"id": 1778000000012, "date": "2026-05-07", "closeDate": "2026-05-07", "product": "FCPO", "contract": "FCPO May27-Jul27 Calendar", "side": "Buy", "status": "Closed", "tradeType": "Spread", "lots": "5", "entryPrice": "14", "reason": "", "target": "17", "stop": "10", "exitPrice": "17", "pnl": "69.10", "learnings": ""},
+  {"id": 1778000000013, "date": "2026-05-07", "closeDate": "", "product": "FCPO", "contract": "FCPO Aug26-Sep26 Calendar", "side": "Sell", "status": "Closed", "tradeType": "Spread", "lots": "30", "entryPrice": "-1.33", "reason": "", "target": "-7", "stop": "0", "exitPrice": "-6.5", "pnl": "824.73", "learnings": ""},
+  {"id": 1778000000014, "date": "2026-05-07", "closeDate": "", "product": "FCPO", "contract": "FCPO Jul26", "side": "Buy", "status": "Closed", "tradeType": "Outright", "lots": "1", "entryPrice": "4525", "reason": "", "target": "4527", "stop": "4520", "exitPrice": "4527", "pnl": "7.52", "learnings": ""},
+  {"id": 1778000000015, "date": "2026-05-07", "closeDate": "2026-05-07", "product": "NG|HH", "contract": "FCPO Jul26", "side": "Buy", "status": "Closed", "tradeType": "Outright", "lots": "20", "entryPrice": "0.00400", "reason": "", "target": "0.00500", "stop": "0.00350", "exitPrice": "0.00500", "pnl": "94.40", "learnings": ""},
+  {"id": 1778000000016, "date": "2026-05-08", "closeDate": "2026-05-08", "product": "FCPO", "contract": "FCPO May27-Jul27 Calendar", "side": "Buy", "status": "Closed", "tradeType": "Spread", "lots": "10", "entryPrice": "15", "reason": "", "target": "19", "stop": "12", "exitPrice": "18.7", "pnl": "182.30", "learnings": ""},
+  {"id": 1778000000017, "date": "2026-05-08", "closeDate": "2026-05-08", "product": "FCPO", "contract": "FCPO Jun26 1mo Butterfly", "side": "Sell", "status": "Closed", "tradeType": "Butterfly", "lots": "10", "entryPrice": "-11", "reason": "", "target": "-14", "stop": "-10", "exitPrice": "-14", "pnl": "87.40", "learnings": ""},
+  {"id": 1778000000018, "date": "2026-05-11", "closeDate": "2026-05-11", "product": "FCPO", "contract": "FCPO Jul26", "side": "Sell", "status": "Closed", "tradeType": "Outright", "lots": "1", "entryPrice": "4556", "reason": "", "target": "4544", "stop": "4560", "exitPrice": "4544", "pnl": "73.06", "learnings": ""},
+  {"id": 1778000000019, "date": "2026-05-11", "closeDate": "", "product": "FCPO", "contract": "FCPO May27-Jul27 Calendar", "side": "Buy", "status": "Open", "tradeType": "Spread", "lots": "20", "entryPrice": "26.5", "reason": "", "target": "30", "stop": "15", "exitPrice": "", "pnl": "-50.80", "learnings": ""},
+  {"id": 1778000000020, "date": "2026-05-11", "closeDate": "", "product": "FCPO", "contract": "FCPO Jul27-Sep27 Calendar", "side": "Sell", "status": "Open", "tradeType": "Spread", "lots": "10", "entryPrice": "18", "reason": "", "target": "12", "stop": "20", "exitPrice": "", "pnl": "-25.40", "learnings": ""},
+  {"id": 1778000000021, "date": "2026-05-11", "closeDate": "", "product": "FCPO", "contract": "FCPO Sep27-Nov27 Calendar", "side": "Sell", "status": "Open", "tradeType": "Spread", "lots": "10", "entryPrice": "7", "reason": "", "target": "0", "stop": "10", "exitPrice": "", "pnl": "-12.70", "learnings": ""},
+  {"id": 1778000000022, "date": "2026-05-11", "closeDate": "2026-05-11", "product": "FCPO", "contract": "FCPO Jul26", "side": "Sell", "status": "Closed", "tradeType": "Outright", "lots": "5", "entryPrice": "4545", "reason": "", "target": "4520", "stop": "4552", "exitPrice": "4552", "pnl": "-233.20", "learnings": ""},
+  {"id": 1778000000023, "date": "2026-05-11", "closeDate": "2026-05-11", "product": "FCPO", "contract": "FCPO Jul26", "side": "Sell", "status": "Closed", "tradeType": "Outright", "lots": "5", "entryPrice": "4532", "reason": "", "target": "4525", "stop": "4536", "exitPrice": "4529", "pnl": "81.80", "learnings": ""},
+  {"id": 1778000000024, "date": "2026-05-11", "closeDate": "2026-05-11", "product": "FCPO", "contract": "FCPO Jul26", "side": "Sell", "status": "Closed", "tradeType": "Outright", "lots": "5", "entryPrice": "4531", "reason": "", "target": "4525", "stop": "4536", "exitPrice": "4525", "pnl": "176.30", "learnings": ""},
+  {"id": 1778000000025, "date": "2026-05-12", "closeDate": "2026-05-12", "product": "FCPO", "contract": "FCPO Jun26", "side": "Buy", "status": "Closed", "tradeType": "Outright", "lots": "30", "entryPrice": "-15", "reason": "", "target": "-9", "stop": "-20", "exitPrice": "-8.33", "pnl": "1184.43", "learnings": ""},
+  {"id": 1778000000026, "date": "2026-05-08", "closeDate": "", "product": "FCPO", "contract": "FCPO Mar27 1mo Butterfly", "side": "Sell", "status": "Open", "tradeType": "Butterfly", "lots": "30", "entryPrice": "1.5", "reason": "", "target": "-5", "stop": "6", "exitPrice": "", "pnl": "-152.40", "learnings": ""},
+];
+let fbData=null,pnlData=null,trades=SAMPLE_TRADES.slice(),positions=[],db=null;
 let currentTab="pnl",jFilter="all",jEditId=null;
+let dashDateFrom="", dashDateTo="";
 
 function initFirebase(){
+  // Render immediately with SAMPLE data — don't wait for Firebase
+  renderPnl();
+
   try{
     if(!firebase.apps.length)firebase.initializeApp(FB);
     db=firebase.database();
     db.ref("/prices").on("value",snap=>{
-      const d=snap.val();if(!d){setStatus("No data","error");return;}
+      const d=snap.val();if(!d)return;
       fbData=d;setStatus(new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit"}),"live");
       if(currentTab==="pnl")renderPnl();else if(currentTab==="prices")renderPrices();
     },()=>setStatus("Error","error"));
     db.ref("/pnl").on("value",snap=>{
       const d=snap.val();if(d){pnlData=d;if(currentTab==="pnl")renderPnl();}
     });
+    db.ref("/positions").on("value",snap=>{
+      const d=snap.val();
+      if(d&&Array.isArray(d))positions=d;
+      else if(d&&typeof d==="object")positions=Object.values(d);
+      else positions=[];
+      if(currentTab==="pnl")renderPnl();
+    });
     db.ref("/trades").on("value",snap=>{
       const d=snap.val();
-      trades=d?Object.values(d):[];
-      const cp=trades.reduce((s,t)=>s+(parseFloat(t.pnl)||0),0);
+      if(d&&Object.keys(d).length>0){trades=Object.values(d);}
+      else{trades=SAMPLE_TRADES.slice();}
+      const cp=trades.filter(t=>t.status==="Closed"||(t.exitPrice&&t.exitPrice.toString().trim()!=="")).reduce((s,t)=>s+(parseFloat(t.pnl)||0),0);
       db.ref("/pnl/closed_pnl").set(Math.round(cp*100)/100);
       if(currentTab==="journal")renderJournal();
       if(currentTab==="pnl")renderPnl();
+      if(currentTab==="dashboard")renderDashboard();
     });
-  }catch(e){setStatus("Config error","error");}
+  }catch(e){setStatus("Offline","error");}
 }
 
 function setStatus(t,s){
@@ -308,18 +351,20 @@ function calcPosPnl(pos){
 function fmt(v){const n=parseFloat(v)||0;return (n>=0?"+":"")+`$${Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`;}
 function fc(v){return parseFloat(v)>0?"pos":parseFloat(v)<0?"neg":"zero";}
 
-// ── P&L TAB ───────────────────────────────────────────────────────────────
+// ── P&L TAB — Open positions from Excel + totals ─────────────────────────
 function renderPnl(){
-  const liveOpen=pnlData?.live_open_pnl??null;
-  const closedPnl=pnlData?.closed_pnl??0;
-  const fbTotal=pnlData?.total_pnl??null;
-  let calcOpen=0;
-  Object.values(POSITIONS).forEach(sec=>sec.forEach(p=>{const v=calcPosPnl(p);if(v!==null)calcOpen+=v;}));
-  const openVal=liveOpen!==null?liveOpen:calcOpen;
-  const total=fbTotal!==null?fbTotal:(openVal+closedPnl);
-  const updTime=fbData?new Date(fbData.updated_at).toLocaleTimeString():"—";
+  const liveOpen = pnlData?.live_open_pnl ?? null;
+  const closedPnl = pnlData?.closed_pnl ?? 0;
+  const openVal = liveOpen !== null ? liveOpen : 0;
+  const total = openVal + closedPnl;
+  const updTime = pnlData?.updated_at ? new Date(pnlData.updated_at).toLocaleTimeString() : "—";
 
-  let html=`
+  // Use positions from Excel via bridge
+  const openPositions = positions.length > 0 ? positions : [];
+
+  function sn(c){ if(!c)return "—"; return c.replace(/FCPO /g,"").replace(/ Calendar/g,"").replace(/ 1mo Butterfly/g," Fly"); }
+
+  let html = `
     <div class="pnl-hero">
       <div class="pnl-total-label">Total P&L</div>
       <div class="pnl-total ${fc(total)}">${fmt(total)}</div>
@@ -327,70 +372,263 @@ function renderPnl(){
         <div class="pnl-box">
           <div class="pnl-box-label">📂 Open P&L</div>
           <div class="pnl-box-val ${fc(openVal)}">${fmt(openVal)}</div>
-          <div class="pnl-box-sub">Live from Excel</div>
+          <div class="pnl-box-sub">${openPositions.length} position${openPositions.length!==1?"s":""} · Live from Excel</div>
         </div>
         <div class="pnl-box">
           <div class="pnl-box-label">✅ Closed P&L</div>
           <div class="pnl-box-val ${fc(closedPnl)}">${fmt(closedPnl)}</div>
-          <div class="pnl-box-sub">${trades.length} trades</div>
+          <div class="pnl-box-sub">From trade journal</div>
         </div>
       </div>
       <div class="updated-text">Updated ${updTime}</div>
     </div>
     <div class="divider"></div>`;
 
-  const labels={OUTRIGHTS:"Outrights",SPREADS:"Spreads",JUMBOS:"Jumbos",BUTTERFLIES:"Butterflies"};
-  Object.entries(POSITIONS).forEach(([secKey,rows])=>{
-    const active=rows.filter(r=>r.side);
-    if(!active.length)return;
-    let secPnl=0;active.forEach(p=>{const v=calcPosPnl(p);if(v!==null)secPnl+=v;});
-    html+=`<div class="section">
-      <div class="sec-title-bar">
-        <div class="sec-title">FCPO ${labels[secKey]}</div>
-        ${active.some(p=>calcPosPnl(p)!==null)?`<div class="sec-pnl ${fc(secPnl)}">${fmt(secPnl)}</div>`:""}
-      </div>
-      <div class="pos-cards">`;
-    active.forEach(pos=>{
-      const mid=getPrice(pos.priceKey);
-      const pnl=calcPosPnl(pos);
-      html+=`<div class="pos-card ${pos.side==="Buy"?"buy-card":"sell-card"}">
+  // ── Open positions from Excel ───────────────────────────────────────────
+  html += `<div class="section">
+    <div class="sec-title-bar"><div class="sec-title">Open Positions</div></div>`;
+
+  if(!openPositions.length){
+    html += `<div style="padding:24px 16px;text-align:center;color:var(--sub);font-size:13px;">
+      No open positions.<br/>Make sure bridge.py is running and Excel is open.
+    </div>`;
+  } else {
+    openPositions.forEach(p => {
+      const pnl = parseFloat(p.pnl)||0;
+      html += `<div class="pos-card ${p.side==="Buy"?"buy-card":"sell-card"}">
         <div>
-          <div class="pos-name">${pos.name}</div>
-          <div class="pos-meta"><span class="pos-side ${pos.side.toLowerCase()}">${pos.side}</span> &nbsp;${pos.lots} lots &nbsp;·&nbsp; Entry ${pos.entry}</div>
+          <div class="pos-name">${sn(p.contract)}</div>
+          <div class="pos-meta">
+            <span class="pos-side ${p.side.toLowerCase()}">${p.side}</span>
+            &nbsp;${p.lots} lots&nbsp;·&nbsp;Entry ${p.entry}
+          </div>
         </div>
         <div>
-          <div class="pos-pnl-val ${pnl!==null?fc(pnl):"zero"}">${pnl!==null?fmt(pnl):"—"}</div>
-          <div class="pos-mid">Mid: ${mid!==null?mid:"—"}</div>
+          <div class="pos-pnl-val ${fc(pnl)}">${fmt(pnl)}</div>
+          <div class="pos-mid">Mid: ${p.mid!==null&&p.mid!==undefined?p.mid:"—"}</div>
         </div>
       </div>`;
     });
-    html+=`</div><div class="divider"></div></div>`;
-  });
+  }
+
+  html += `</div><div class="divider"></div>`;
   showContent(html);
 }
 
+// ── DASHBOARD TAB — Daily / Weekly / Monthly / Quarterly ──────────────────
+function setDashFilter(from,to){ dashDateFrom=from; dashDateTo=to; renderDashboard(); }
+
+function renderDashboard(){
+  function tradeDate(t){ return (t.closeDate&&t.closeDate.trim())?t.closeDate:t.date; }
+
+  const allClosed = trades.filter(t => t.status==="Closed"||(t.exitPrice&&t.exitPrice.toString().trim()!==""));
+  const filtered = allClosed.filter(t => {
+    const d=tradeDate(t);
+    if(dashDateFrom&&d<dashDateFrom)return false;
+    if(dashDateTo&&d>dashDateTo)return false;
+    return true;
+  }).sort((a,b)=>tradeDate(b)>tradeDate(a)?1:-1);
+
+  const CPTS={Outright:1,Spread:2,Butterfly:4,"Double Fly":8};
+  function getContracts(t){ 
+    const l=parseFloat(t.lots)||0;
+    const perLot=CPTS[t.tradeType]||1;
+    const legs=(t.status==="Open")?1:2;
+    return l*perLot*legs;
+  }
+
+  function getWeekKey(s){
+    const d=new Date(s+"T00:00:00"),day=d.getDay(),diff=(day===0?-6:1)-day,mon=new Date(d);
+    mon.setDate(d.getDate()+diff); return mon.toISOString().slice(0,10);
+  }
+  function weekLabel(s){
+    const mon=new Date(s+"T00:00:00"),sun=new Date(mon);sun.setDate(mon.getDate()+6);
+    const f=d=>d.toLocaleDateString("en-GB",{day:"numeric",month:"short"});
+    return `${f(mon)} – ${f(sun)}`;
+  }
+  function getQtrKey(s){ const [yr,mo]=s.slice(0,7).split("-"); return `${yr}-Q${Math.ceil(parseInt(mo)/3)}`; }
+  function qtrLabel(qk){ const [yr,q]=qk.split("-"); return `${{Q1:"Jan–Mar",Q2:"Apr–Jun",Q3:"Jul–Sep",Q4:"Oct–Dec"}[q]||q} ${yr}`; }
+
+  function groupBy(arr,keyFn){
+    const g={};
+    arr.forEach(t=>{const k=keyFn(t);if(!k)return;if(!g[k])g[k]={pnl:0,count:0,wins:0,trades:[]};const p=parseFloat(t.pnl)||0;g[k].pnl+=p;g[k].count++;if(p>0)g[k].wins++;g[k].trades.push(t);});
+    return Object.entries(g).sort((a,b)=>a[0]>b[0]?-1:1);
+  }
+
+  const days     = groupBy(filtered, t=>tradeDate(t));
+  const weeks    = groupBy(filtered, t=>{const d=tradeDate(t);return d?getWeekKey(d):null;});
+  const months   = groupBy(filtered, t=>{const d=tradeDate(t);return d?d.slice(0,7):null;});
+  const quarters = groupBy(filtered, t=>{const d=tradeDate(t);return d?getQtrKey(d):null;});
+
+  const TH=cols=>`<thead><tr style="background:var(--navy);color:#fff;">${cols.map((c,i)=>`<th style="padding:10px 12px;text-align:${i===0?"left":i===cols.length-1?"right":"center"};font-weight:600;${i===0?"border-radius:8px 0 0 0;":""}${i===cols.length-1?"border-radius:0 8px 0 0;":""}">${c}</th>`).join("")}</tr></thead>`;
+
+  function buildTable(entries,labelFn){
+    if(!entries.length) return `<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--sub);">No data for selected period.</td></tr>`;
+    return entries.map(([k,d],i)=>{
+      const wr=d.count?Math.round(d.wins/d.count*100):0;
+      const ctrs=d.trades.reduce((s,t)=>s+getContracts(t),0);
+      const bg=i%2===0?"var(--light)":"#fff";
+      return `<tr style="background:${bg};border-bottom:1px solid var(--border);">
+        <td style="padding:10px 12px;font-weight:600;color:var(--text);">${labelFn(k)}</td>
+        <td style="padding:10px 12px;text-align:center;color:var(--sub);">${d.count}</td>
+        <td style="padding:10px 12px;text-align:center;color:var(--sub);">${ctrs}</td>
+        <td style="padding:10px 12px;text-align:center;color:${wr>=50?"var(--green)":"var(--red)"};">${wr}%</td>
+        <td style="padding:10px 12px;text-align:right;font-weight:700;color:${d.pnl>0?"var(--green)":d.pnl<0?"var(--red)":"var(--sub)"};">${fmt(d.pnl)}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  const today=new Date().toISOString().slice(0,10);
+  const thisMonStart=today.slice(0,7)+"-01";
+  const thisWeekMon=getWeekKey(today);
+
+  const openTrades2   = filtered.filter(t=>t.status==="Open"&&(!t.exitPrice||t.exitPrice.toString().trim()===""));
+  const closedTrades2 = filtered.filter(t=>t.status==="Closed"||(t.exitPrice&&t.exitPrice.toString().trim()!==""));
+  const totalPnl   = filtered.reduce((s,t)=>s+(parseFloat(t.pnl)||0),0);
+  const openPnl    = openTrades2.reduce((s,t)=>s+(parseFloat(t.pnl)||0),0);
+  const closedPnl2 = closedTrades2.reduce((s,t)=>s+(parseFloat(t.pnl)||0),0);
+  const totalCtrs  = filtered.reduce((s,t)=>s+getContracts(t),0);
+  const openCtrs   = openTrades2.reduce((s,t)=>s+getContracts(t),0);
+  const closedCtrs = closedTrades2.reduce((s,t)=>s+getContracts(t),0);
+  const wins = filtered.filter(t=>parseFloat(t.pnl)>0).length;
+  const wr = filtered.length?Math.round(wins/filtered.length*100):0;
+  const rrVals = filtered.map(t=>{
+    const e=parseFloat(t.entryPrice),tg=parseFloat(t.target),st=parseFloat(t.stop);
+    if(isNaN(e)||isNaN(tg)||isNaN(st)||!t.target||!t.stop)return null;
+    const risk=Math.abs(e-st);return risk>0?Math.abs(tg-e)/risk:null;
+  }).filter(x=>x!==null);
+  const avgRR = rrVals.length?(rrVals.reduce((s,v)=>s+v,0)/rrVals.length).toFixed(2):null;
+
+  let html = `
+    <div class="pnl-hero">
+      <div class="pnl-total-label">Filtered P&L</div>
+      <div class="pnl-total ${fc(totalPnl)}">${fmt(totalPnl)}</div>
+      <div class="pnl-row">
+        <div class="pnl-box">
+          <div class="pnl-box-label">📂 Open P&L</div>
+          <div class="pnl-box-val ${fc(openPnl)}">${fmt(openPnl)}</div>
+          <div class="pnl-box-sub">${openTrades2.length} trades · ${openCtrs} contracts</div>
+        </div>
+        <div class="pnl-box">
+          <div class="pnl-box-label">✅ Closed P&L</div>
+          <div class="pnl-box-val ${fc(closedPnl2)}">${fmt(closedPnl2)}</div>
+          <div class="pnl-box-sub">${closedTrades2.length} trades · ${closedCtrs} contracts</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px;">
+        <div class="pnl-box" style="text-align:center;">
+          <div class="pnl-box-label">📊 Total</div>
+          <div class="pnl-box-val" style="color:var(--navy);font-size:18px;">${filtered.length}</div>
+          <div class="pnl-box-sub">Win ${wr}%</div>
+        </div>
+        <div class="pnl-box" style="text-align:center;">
+          <div class="pnl-box-label">🔄 Contracts</div>
+          <div class="pnl-box-val" style="color:var(--navy);font-size:18px;">${totalCtrs}</div>
+          <div class="pnl-box-sub">Total traded</div>
+        </div>
+        <div class="pnl-box" style="text-align:center;">
+          <div class="pnl-box-label">⚖️ Avg R:R</div>
+          <div class="pnl-box-val" style="color:#c9a84c;font-size:18px;">${avgRR?"1:"+avgRR:"—"}</div>
+          <div class="pnl-box-sub">${rrVals.length} trades set</div>
+        </div>
+      </div>
+    </div>
+    <div class="divider"></div>
+
+    <div style="padding:12px 16px;background:#fff;border-bottom:1px solid var(--border);">
+      <div style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--sub);margin-bottom:8px;">Date Filter</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <button onclick="setDashFilter('','')" style="padding:5px 12px;border-radius:20px;border:1.5px solid ${!dashDateFrom&&!dashDateTo?"var(--navy)":"var(--border)"};background:${!dashDateFrom&&!dashDateTo?"var(--navy)":"#fff"};color:${!dashDateFrom&&!dashDateTo?"#fff":"var(--sub)"};font-size:12px;font-weight:600;cursor:pointer;">All</button>
+        <button onclick="setDashFilter('${thisWeekMon}','${today}')" style="padding:5px 12px;border-radius:20px;border:1.5px solid ${dashDateFrom===thisWeekMon?"var(--navy)":"var(--border)"};background:${dashDateFrom===thisWeekMon?"var(--navy)":"#fff"};color:${dashDateFrom===thisWeekMon?"#fff":"var(--sub)"};font-size:12px;font-weight:600;cursor:pointer;">This Week</button>
+        <button onclick="setDashFilter('${thisMonStart}','${today}')" style="padding:5px 12px;border-radius:20px;border:1.5px solid ${dashDateFrom===thisMonStart?"var(--navy)":"var(--border)"};background:${dashDateFrom===thisMonStart?"var(--navy)":"#fff"};color:${dashDateFrom===thisMonStart?"#fff":"var(--sub)"};font-size:12px;font-weight:600;cursor:pointer;">This Month</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="date" value="${dashDateFrom}" onchange="dashDateFrom=this.value;renderDashboard()" style="flex:1;padding:7px 10px;font-size:12px;border:1.5px solid var(--border);border-radius:8px;"/>
+        <span style="color:var(--sub);font-size:12px;">to</span>
+        <input type="date" value="${dashDateTo}" onchange="dashDateTo=this.value;renderDashboard()" style="flex:1;padding:7px 10px;font-size:12px;border:1.5px solid var(--border);border-radius:8px;"/>
+      </div>
+    </div>
+    <div class="divider"></div>`;
+
+  // Daily
+  html+=`<div class="section"><div class="sec-title-bar"><div class="sec-title">Daily</div></div>
+    <div style="overflow-x:auto;padding:0 16px 16px;"><table style="width:100%;border-collapse:collapse;font-size:13px;">
+    ${TH(["Date","Trades","Contracts","Win%","P&L"])}
+    <tbody>${buildTable(days,k=>new Date(k+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"2-digit",month:"short",year:"numeric"}))}</tbody>
+    </table></div></div><div class="divider"></div>`;
+
+  // Weekly
+  html+=`<div class="section"><div class="sec-title-bar"><div class="sec-title">Weekly</div></div>
+    <div style="overflow-x:auto;padding:0 16px 16px;"><table style="width:100%;border-collapse:collapse;font-size:13px;">
+    ${TH(["Week","Trades","Contracts","Win%","P&L"])}
+    <tbody>${buildTable(weeks,weekLabel)}</tbody>
+    </table></div></div><div class="divider"></div>`;
+
+  // Monthly
+  html+=`<div class="section"><div class="sec-title-bar"><div class="sec-title">Monthly</div></div>
+    <div style="overflow-x:auto;padding:0 16px 16px;"><table style="width:100%;border-collapse:collapse;font-size:13px;">
+    ${TH(["Month","Trades","Contracts","Win%","P&L"])}
+    <tbody>${buildTable(months,k=>{const[yr,mo]=k.split("-");return new Date(yr,parseInt(mo)-1,1).toLocaleDateString("en-GB",{month:"long",year:"numeric"});})}</tbody>
+    </table></div></div><div class="divider"></div>`;
+
+  // Quarterly
+  html+=`<div class="section"><div class="sec-title-bar"><div class="sec-title">Quarterly</div></div>
+    <div style="overflow-x:auto;padding:0 16px 16px;"><table style="width:100%;border-collapse:collapse;font-size:13px;">
+    ${TH(["Quarter","Trades","Contracts","Win%","P&L"])}
+    <tbody>${buildTable(quarters,qtrLabel)}</tbody>
+    </table></div></div><div class="divider"></div>`;
+
+  showContent(html);
+}
 // ── PRICES TAB ────────────────────────────────────────────────────────────
 function renderPrices(){
-  if(!fbData){showEmpty("Waiting for price data…");return;}
-  const o=fbData.outrights||{},d=fbData.derived||{};
-  let html=`<div class="price-wrap">`;
-  const fcpoOut=Object.entries(o).filter(([k])=>k.startsWith("FCPO"));
-  if(fcpoOut.length){
-    html+=`<div class="price-sec"><div class="price-sec-title">FCPO Outrights</div>
-    <table class="price-table"><thead><tr><th>Contract</th><th>Bid</th><th>Ask</th><th>Mid</th></tr></thead><tbody>
-    ${fcpoOut.map(([k,v])=>`<tr><td>${k.replace("FCPO ","")}</td><td>${v.bid??'—'}</td><td>${v.ask??'—'}</td><td><strong>${v.mid??'—'}</strong></td></tr>`).join("")}
-    </tbody></table></div>`;
+  if(!fbData){showEmpty("Waiting for price data…<br/>Make sure bridge.py is running.");return;}
+  const o=fbData.outrights||{}, d=fbData.derived||{};
+
+  function priceTable(title, entries, cols){
+    if(!entries.length) return "";
+    const headers = cols.map((c,i)=>`<th style="padding:9px 12px;text-align:${i===0?"left":"center"};font-weight:600;${i===0?"border-radius:8px 0 0 0;":""}${i===cols.length-1?"border-radius:0 8px 0 0;text-align:right;":""}">${c}</th>`).join("");
+    const rows = entries.map(([name,v],i)=>{
+      const bg = i%2===0?"var(--light)":"#fff";
+      const shortName = name.replace(/FCPO /g,"").replace(/ Calendar/g,"").replace(/ 1mo Butterfly/g," Fly");
+      if(cols.length===5){
+        // Outrights: Name | Bid | Ask | Last | Mid
+        return `<tr style="background:${bg};border-bottom:1px solid var(--border);">
+          <td style="padding:8px 12px;font-weight:600;color:var(--text);">${shortName}</td>
+          <td style="padding:8px 12px;text-align:center;color:var(--sub);">${v.bid??'—'}</td>
+          <td style="padding:8px 12px;text-align:center;color:var(--sub);">${v.ask??'—'}</td>
+          <td style="padding:8px 12px;text-align:center;color:var(--sub);">${v.last??'—'}</td>
+          <td style="padding:8px 12px;text-align:right;font-weight:700;color:var(--navy);">${v.mid??'—'}</td>
+        </tr>`;
+      } else {
+        // Spreads/Jumbos/Flies: Name | Price
+        const p = v.mid;
+        return `<tr style="background:${bg};border-bottom:1px solid var(--border);">
+          <td style="padding:8px 12px;font-weight:600;color:var(--text);">${shortName}</td>
+          <td style="padding:8px 12px;text-align:right;font-weight:700;color:${p>0?"var(--green)":p<0?"var(--red)":"var(--navy)"};">${p??'—'}</td>
+        </tr>`;
+      }
+    }).join("");
+    return `<div class="section">
+      <div class="sec-title-bar"><div class="sec-title">${title}</div></div>
+      <div style="overflow-x:auto;padding:0 16px 16px;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="background:var(--navy);color:#fff;">${headers}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div></div><div class="divider"></div>`;
   }
-  [{key:"spread",label:"Spreads"},{key:"jumbo",label:"Jumbos"},{key:"fly",label:"Flies"}].forEach(({key,label})=>{
-    const items=Object.entries(d).filter(([,v])=>v.type===key);
-    if(!items.length)return;
-    html+=`<div class="price-sec"><div class="price-sec-title">FCPO ${label}</div>
-    <table class="price-table"><thead><tr><th>Pair</th><th>Mid</th></tr></thead><tbody>
-    ${items.map(([k,v])=>`<tr><td>${k.replace(/FCPO /g,"")}</td><td><strong>${v.mid}</strong></td></tr>`).join("")}
-    </tbody></table></div>`;
-  });
-  html+=`</div>`;
-  showContent(html);
+
+  const fcpoOut = Object.entries(o).filter(([k])=>k.startsWith("FCPO ")).sort((a,b)=>a[0]>b[0]?1:-1);
+  const spreads = Object.entries(d).filter(([,v])=>v.type==="spread").sort((a,b)=>a[0]>b[0]?1:-1);
+  const jumbos  = Object.entries(d).filter(([,v])=>v.type==="jumbo").sort((a,b)=>a[0]>b[0]?1:-1);
+  const flies   = Object.entries(d).filter(([,v])=>v.type==="fly").sort((a,b)=>a[0]>b[0]?1:-1);
+
+  let html = priceTable("FCPO Outrights", fcpoOut, ["Contract","Bid","Ask","Last","Mid"]);
+  html += priceTable("Spreads", spreads, ["Spread","Price"]);
+  html += priceTable("Jumbos",  jumbos,  ["Jumbo","Price"]);
+  html += priceTable("Butterflies", flies, ["Fly","Price"]);
+
+  showContent(html || `<div class="loading"><div class="empty-msg">No price data available.</div></div>`);
 }
 
 // ── JOURNAL TAB ───────────────────────────────────────────────────────────
@@ -610,17 +848,26 @@ function renderSettings(){
 
 // ── HELPERS ───────────────────────────────────────────────────────────────
 function showContent(html){
-  document.getElementById("loading-state").style.display="none";
-  const m=document.getElementById("main-content");m.style.display="block";m.innerHTML=html;
+  const ls=document.getElementById("loading-state");
+  if(ls)ls.style.display="none";
+  const m=document.getElementById("main-content");
+  if(m){m.style.display="block";m.innerHTML=html;}
 }
 function showEmpty(msg){showContent(`<div class="loading"><div class="empty-msg">${msg}</div></div>`);}
+
+document.addEventListener("DOMContentLoaded",()=>{
+  renderPnl();
+  initFirebase();
+});
+
 function switchTab(tab){
   currentTab=tab;
-  ["pnl","prices","journal","settings"].forEach(t=>document.getElementById("tab-"+t).classList.toggle("active",t===tab));
-  const subs={pnl:"Live P&L",prices:"Market Prices",journal:"Trade Journal",settings:"Settings"};
+  ["pnl","dashboard","prices","journal","settings"].forEach(t=>document.getElementById("tab-"+t).classList.toggle("active",t===tab));
+  const subs={pnl:"Live P&L",dashboard:"Dashboard",prices:"Market Prices",journal:"Trade Journal",settings:"Settings"};
   document.getElementById("header-sub").textContent=subs[tab];
   const fab=document.getElementById("j-fab");if(fab&&tab!=="journal")fab.remove();
   if(tab==="pnl")renderPnl();
+  else if(tab==="dashboard")renderDashboard();
   else if(tab==="prices")renderPrices();
   else if(tab==="journal")renderJournal();
   else renderSettings();
@@ -631,7 +878,6 @@ function showToast(msg){
   const t=document.createElement("div");t.className="toast";t.textContent=msg;
   document.body.appendChild(t);clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.remove(),2500);
 }
-document.addEventListener("DOMContentLoaded",initFirebase);
 </script>
 </body>
 </html>
