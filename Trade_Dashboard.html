@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>The Imperial Crest – Futures Trade Journal</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#f4f5f7;font-family:'Inter',sans-serif;color:#111827;}
+input,select,textarea{background:#fff;border:1.5px solid #e5e7eb;color:#111827;font-family:'Inter',sans-serif;font-size:14px;padding:10px 14px;width:100%;outline:none;border-radius:8px;transition:border-color 0.2s,box-shadow 0.2s;}
+input:focus,select:focus,textarea:focus{border-color:#0f1c35;box-shadow:0 0 0 3px rgba(15,28,53,0.08);}
+textarea{resize:vertical;min-height:80px;}
+select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7' viewBox='0 0 12 7'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239ca3af' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px;}
+button{cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.15s ease;}
+::-webkit-scrollbar{height:4px;width:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:4px;}
+.fade{animation:fadeUp 0.22s ease both;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+.trow:hover{background:#f8faff !important;}
+.navbtn{padding:8px 16px;border-radius:8px;font-size:13px;font-weight:500;border:1.5px solid #e5e7eb;background:#fff;color:#4b5563;letter-spacing:0.01em;}
+.navbtn:hover{border-color:#0f1c35;color:#0f1c35;}
+.navbtn.on{background:#0f1c35;color:#fff;border-color:#0f1c35;}
+.card{background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.06),0 4px 16px rgba(0,0,0,0.04);border:1px solid #e5e7eb;}
+.seg-btn{padding:6px 16px;border-radius:6px;border:none;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s;}
+.seg-btn.on{background:#fff;color:#0f1c35;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,0.1);}
+.seg-btn.off{background:transparent;color:#9ca3af;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState, useMemo, useEffect} = React;
+
+const NAVY="#0f1c35", NAVY2="#1a2e52", GOLD="#c9a84c", GOLD2="#e8c96a", GOLDBG="#fdf6e3",
+      GREEN="#059669", GREENBG="#ecfdf5", RED="#dc2626", REDBG="#fef2f2",
+      G50="#f9fafb", G100="#f3f4f6", G200="#e5e7eb", G300="#d1d5db",
+      G400="#9ca3af", G600="#4b5563", G700="#374151", G900="#111827";
+
+const DEFAULT_PRODUCTS=[
+  {name:"FCPO",  tickSize:1,      tickValue:6.358875, tc:2.90, currency:"USD", note:"Bursa Malaysia Crude Palm Oil"},
+  {name:"TF",    tickSize:0.1,    tickValue:0,    tc:0,    currency:"USD", note:""},
+  {name:"NG|HH", tickSize:0.0025, tickValue:2.50, tc:2.80, currency:"USD", note:"Natural Gas Spread"},
+  {name:"RS",    tickSize:0.1,    tickValue:0,    tc:0,    currency:"USD", note:""},
+  {name:"CL",    tickSize:0.01,   tickValue:10,   tc:0,    currency:"USD", note:"Crude Oil"},
+  {name:"GC",    tickSize:0.10,   tickValue:10,   tc:0,    currency:"USD", note:"Gold"},
+  {name:"ES",    tickSize:0.25,   tickValue:12.50,tc:0,    currency:"USD", note:"S&P 500"},
+  {name:"NQ",    tickSize:0.25,   tickValue:5.00, tc:0,    currency:"USD", note:"Nasdaq 100"},
+];
+const SIDES=["Buy","Sell"];
+const STATUSES=["Closed","Open"];
+
+// Open:   P&L = −entryTC
+// Closed: P&L = Gross − entryTC − exitTC  (full net, both legs)
+function calcEntryPnl(entry,exit,lots,side,spec,status){
+  if(!spec||!spec.tickValue||!spec.tickSize)return "";
+  const l=parseFloat(lots);
+  if(isNaN(l)||l<=0)return "";
+  const entryTc=l*parseFloat(spec.tc||0);
+  const e=parseFloat(entry),x=parseFloat(exit);
+  if(isNaN(e)||isNaN(x)){
+    if(isNaN(e))return "";
+    return (-entryTc).toFixed(2); // open, no exit yet
+  }
+  const priceDiff = side==="Buy" ? (x-e) : (e-x);
+  const ticks = Math.round((priceDiff / spec.tickSize) * 1e10) / 1e10;
+  const gross = ticks * l * parseFloat(spec.tickValue);
+  const tcLegs = (status==="Open") ? 1 : 2;
+  return (gross - entryTc * tcLegs).toFixed(2);
+}
+// Exit-leg TC cost (negative, deducted on close date)
+function calcExitTc(lots,spec){
+  if(!spec||!spec.tc)return 0;
+  const l=parseFloat(lots);
+  if(isNaN(l)||l<=0)return 0;
+  return l*parseFloat(spec.tc||0);
+}
+// Legacy wrapper
+function calcPnl(entry,exit,lots,side,spec,status){
+  return calcEntryPnl(entry,exit,lots,side,spec,status);
+}
+
+// Always recalculate P&L from scratch using correct TC formula
+function recalcTrade(t,specs){
+  if(!t.entryPrice||!t.lots)return t;
+  const l=parseFloat(t.lots);if(isNaN(l)||l<=0)return t;
+  const e=parseFloat(t.entryPrice);if(isNaN(e))return t;
+  const cpt=CONTRACTS_PER_LOT[t.tradeType]||1;
+  let pnl;
+  if(t.product==="FCPO"){
+    const tc=l*cpt*FCPO_TC_PER_CONTRACT;
+    const x=parseFloat(t.exitPrice);
+    if(isNaN(x)||t.exitPrice===""||t.exitPrice===undefined){
+      pnl=(-tc).toFixed(2); // open: entry TC only
+    } else {
+      const gross=((t.side==="Buy"?(x-e):(e-x))/1)*l*6.358875;
+      pnl=(gross-tc*2).toFixed(2); // closed: gross minus round-trip TC
+    }
+  } else {
+    const spec=specs.find(s=>s.name===t.product);
+    if(!spec)return t;
+    pnl=calcEntryPnl(t.entryPrice,t.exitPrice,t.lots,t.side,spec,t.status);
+  }
+  return {...t,pnl};
+}
+
+const TRADE_TYPES=["Outright","Spread","Butterfly","Double Fly"];
+const CONTRACTS_PER_LOT={"Outright":1,"Spread":2,"Butterfly":4,"Double Fly":8};
+function getContracts(lots,tradeType,status){
+  const l=parseFloat(lots);
+  if(isNaN(l)||l<=0)return 0;
+  const perLot=CONTRACTS_PER_LOT[tradeType]||1;
+  const legs=(status==="Open")?1:2; // open = entry only, closed = entry + exit
+  return l*perLot*legs;
+}
+const EMPTY={
+  date:new Date().toISOString().slice(0,10),
+  closeDate:"",
+  product:"FCPO",contract:"",side:"Buy",status:"Closed",tradeType:"Outright",
+  lots:"",entryPrice:"",reason:"",
+  target:"",stop:"",exitPrice:"",pnl:"",learnings:""
+};
+
+const SAMPLE=[
+  {"id": 1778000000000, "date": "2026-05-05", "closeDate": "2026-05-05", "product": "FCPO", "contract": "FCPO May27-Jul27 Calendar", "side": "Buy", "status": "Closed", "tradeType": "Spread", "lots": "3", "entryPrice": "32", "reason": "", "target": "", "stop": "", "exitPrice": "35.33", "pnl": "47.70", "learnings": ""},
+  {"id": 1778000000001, "date": "2026-05-05", "closeDate": "2026-05-05", "product": "FCPO", "contract": "FCPO Jul26", "side": "Sell", "status": "Closed", "tradeType": "Outright", "lots": "1", "entryPrice": "4635", "reason": "", "target": "", "stop": "", "exitPrice": "4632", "pnl": "13.82", "learnings": ""},
+  {"id": 1778000000002, "date": "2026-05-04", "closeDate": "2026-05-04", "product": "NG|HH", "contract": "FCPO Jun26", "side": "Buy", "status": "Closed", "tradeType": "Outright", "lots": "2", "entryPrice": "0.00750", "reason": "", "target": "", "stop": "", "exitPrice": "0.00850", "pnl": "9.44", "learnings": ""},
+  {"id": 1778000000003, "date": "2026-05-04", "closeDate": "2026-05-05", "product": "FCPO", "contract": "FCPO May27-Jul27 Calendar", "side": "Buy", "status": "Closed", "tradeType": "Spread", "lots": "1", "entryPrice": "34", "reason": "", "target": "37", "stop": "30", "exitPrice": "37", "pnl": "13.82", "learnings": ""},
+  {"id": 1778000000004, "date": "2026-05-04", "closeDate": "2026-05-04", "product": "FCPO", "contract": "FCPO Jul26", "side": "Sell", "status": "Closed", "tradeType": "Outright", "lots": "1", "entryPrice": "4627", "reason": "", "target": "4627", "stop": "4630", "exitPrice": "4626", "pnl": "1.22", "learnings": ""},
+  {"id": 1778000000005, "date": "2026-05-06", "closeDate": "2026-05-06", "product": "FCPO", "contract": "FCPO May27-Sep27 Calendar", "side": "Sell", "status": "Closed", "tradeType": "Spread", "lots": "5", "entryPrice": "54", "reason": "", "target": "52", "stop": "56", "exitPrice": "52", "pnl": "37.60", "learnings": ""},
+  {"id": 1778000000006, "date": "2026-05-06", "closeDate": "2026-05-06", "product": "FCPO", "contract": "FCPO Jul27-Sep27 Calendar", "side": "Sell", "status": "Closed", "tradeType": "Spread", "lots": "3", "entryPrice": "20", "reason": "", "target": "17", "stop": "25", "exitPrice": "17", "pnl": "41.46", "learnings": ""},
+  {"id": 1778000000007, "date": "2026-05-06", "closeDate": "", "product": "FCPO", "contract": "FCPO Jul27-Sep27 Calendar", "side": "Buy", "status": "Closed", "tradeType": "Spread", "lots": "5", "entryPrice": "16.8", "reason": "", "target": "20", "stop": "15", "exitPrice": "20", "pnl": "75.40", "learnings": ""},
+  {"id": 1778000000008, "date": "2026-05-05", "closeDate": "", "product": "NG|HH", "contract": "FCPO Jul26", "side": "Buy", "status": "Closed", "tradeType": "Outright", "lots": "10", "entryPrice": "0.00400", "reason": "", "target": "0.00500", "stop": "0.00300", "exitPrice": "0.00500", "pnl": "47.20", "learnings": ""},
+  {"id": 1778000000009, "date": "2026-05-06", "closeDate": "", "product": "FCPO", "contract": "FCPO Jul27-Sep27 Calendar", "side": "Buy", "status": "Closed", "tradeType": "Spread", "lots": "5", "entryPrice": "16.8", "reason": "", "target": "20", "stop": "15", "exitPrice": "19", "pnl": "43.90", "learnings": ""},
+  {"id": 1778000000010, "date": "2026-05-06", "closeDate": "", "product": "FCPO", "contract": "FCPO Jul27-Sep27 Calendar", "side": "Buy", "status": "Closed", "tradeType": "Spread", "lots": "10", "entryPrice": "14.5", "reason": "", "target": "17", "stop": "10", "exitPrice": "17", "pnl": "106.70", "learnings": ""},
+  {"id": 1778000000011, "date": "2026-05-07", "closeDate": "", "product": "FCPO", "contract": "FCPO Jul27-Sep27 Calendar", "side": "Sell", "status": "Closed", "tradeType": "Spread", "lots": "10", "entryPrice": "19", "reason": "", "target": "15", "stop": "22", "exitPrice": "14", "pnl": "264.20", "learnings": ""},
+  {"id": 1778000000012, "date": "2026-05-07", "closeDate": "2026-05-07", "product": "FCPO", "contract": "FCPO May27-Jul27 Calendar", "side": "Buy", "status": "Closed", "tradeType": "Spread", "lots": "5", "entryPrice": "14", "reason": "", "target": "17", "stop": "10", "exitPrice": "17", "pnl": "69.10", "learnings": ""},
+  {"id": 1778000000013, "date": "2026-05-07", "closeDate": "", "product": "FCPO", "contract": "FCPO Aug26-Sep26 Calendar", "side": "Sell", "status": "Closed", "tradeType": "Spread", "lots": "30", "entryPrice": "-1.33", "reason": "", "target": "-7", "stop": "0", "exitPrice": "-6.5", "pnl": "824.73", "learnings": ""},
+  {"id": 1778000000014, "date": "2026-05-07", "closeDate": "", "product": "FCPO", "contract": "FCPO Jul26", "side": "Buy", "status": "Closed", "tradeType": "Outright", "lots": "1", "entryPrice": "4525", "reason": "", "target": "4527", "stop": "4520", "exitPrice": "4527", "pnl": "7.52", "learnings": ""},
+  {"id": 1778000000015, "date": "2026-05-07", "closeDate": "2026-05-07", "product": "NG|HH", "contract": "FCPO Jul26", "side": "Buy", "status": "Closed", "tradeType": "Outright", "lots": "20", "entryPrice": "0.00400", "reason": "", "target": "0.00500", "stop": "0.00350", "exitPrice": "0.00500", "pnl": "94.40", "learnings": ""},
+  {"id": 1778000000016, "date": "2026-05-08", "closeDate": "2026-05-08", "product": "FCPO", "contract": "FCPO May27-Jul27 Calendar", "side": "Buy", "status": "Closed", "tradeType": "Spread", "lots": "10", "entryPrice": "15", "reason": "", "target": "19", "stop": "12", "exitPrice": "18.7", "pnl": "182.30", "learnings": ""},
+  {"id": 1778000000017, "date": "2026-05-08", "closeDate": "2026-05-08", "product": "FCPO", "contract": "FCPO Jun26 1mo Butterfly", "side": "Sell", "status": "Closed", "tradeType": "Butterfly", "lots": "10", "entryPrice": "-11", "reason": "", "target": "-14", "stop": "-10", "exitPrice": "-14", "pnl": "87.40", "learnings": ""},
+  {"id": 1778000000018, "date": "2026-05-11", "closeDate": "2026-05-11", "product": "FCPO", "contract": "FCPO Jul26", "side": "Sell", "status": "Closed", "tradeType": "Outright", "lots": "1", "entryPrice": "4556", "reason": "", "target": "4544", "stop": "4560", "exitPrice": "4544", "pnl": "73.06", "learnings": ""},
+  {"id": 1778000000019, "date": "2026-05-11", "closeDate": "", "product": "FCPO", "contract": "FCPO May27-Jul27 Calendar", "side": "Buy", "status": "Open", "tradeType": "Spread", "lots": "20", "entryPrice": "26.5", "reason": "", "target": "30", "stop": "15", "exitPrice": "", "pnl": "-50.80", "learnings": ""},
+  {"id": 1778000000020, "date": "2026-05-11", "closeDate": "", "product": "FCPO", "contract": "FCPO Jul27-Sep27 Calendar", "side": "Sell", "status": "Open", "tradeType": "Spread", "lots": "10", "entryPrice": "18", "reason": "", "target": "12", "stop": "20", "exitPrice": "", "pnl": "-25.40", "learnings": ""},
+  {"id": 1778000000021, "date": "2026-05-11", "closeDate": "", "product": "FCPO", "contract": "FCPO Sep27-Nov27 Calendar", "side": "Sell", "status": "Open", "tradeType": "Spread", "lots": "10", "entryPrice": "7", "reason": "", "target": "0", "stop": "10", "exitPrice": "", "pnl": "-12.70", "learnings": ""},
+  {"id": 1778000000022, "date": "2026-05-11", "closeDate": "2026-05-11", "product": "FCPO", "contract": "FCPO Jul26", "side": "Sell", "status": "Closed", "tradeType": "Outright", "lots": "5", "entryPrice": "4545", "reason": "", "target": "4520", "stop": "4552", "exitPrice": "4552", "pnl": "-233.20", "learnings": ""},
+  {"id": 1778000000023, "date": "2026-05-11", "closeDate": "2026-05-11", "product": "FCPO", "contract": "FCPO Jul26", "side": "Sell", "status": "Closed", "tradeType": "Outright", "lots": "5", "entryPrice": "4532", "reason": "", "target": "4525", "stop": "4536", "exitPrice": "4529", "pnl": "81.80", "learnings": ""},
+  {"id": 1778000000024, "date": "2026-05-11", "closeDate": "2026-05-11", "product": "FCPO", "contract": "FCPO Jul26", "side": "Sell", "status": "Closed", "tradeType": "Outright", "lots": "5", "entryPrice": "4531", "reason": "", "target": "4525", "stop": "4536", "exitPrice": "4525", "pnl": "176.30", "learnings": ""},
+  {"id": 1778000000025, "date": "2026-05-12", "closeDate": "2026-05-12", "product": "FCPO", "contract": "FCPO Jun26", "side": "Buy", "status": "Closed", "tradeType": "Outright", "lots": "30", "entryPrice": "-15", "reason": "", "target": "-9", "stop": "-20", "exitPrice": "-8.33", "pnl": "1184.43", "learnings": ""},
+  {"id": 1778000000026, "date": "2026-05-08", "closeDate": "", "product": "FCPO", "contract": "FCPO Mar27 1mo Butterfly", "side": "Sell", "status": "Open", "tradeType": "Butterfly", "lots": "30", "entryPrice": "1.5", "reason": "", "target": "-5", "stop": "6", "exitPrice": "", "pnl": "-152.40", "learnings": ""},
+];
+
+function Crest({sz}){
+  sz=sz||48;
+  return (
+    <svg width={sz} height={sz} viewBox="0 0 80 80" fill="none">
+      <path d="M40 6L10 18V42C10 57 24 68 40 74C56 68 70 57 70 42V18L40 6Z" fill={NAVY} stroke={GOLD} strokeWidth="1.5"/>
+      <path d="M40 12L16 22V42C16 54 28 63 40 68C52 63 64 54 64 42V22L40 12Z" fill="none" stroke={GOLD} strokeWidth="0.8" strokeDasharray="2 1"/>
+      <path d="M26 18H54" stroke={GOLD} strokeWidth="1.2"/>
+      <path d="M29 18V14M40 18V12M51 18V14" stroke={GOLD} strokeWidth="1.2" strokeLinecap="round"/>
+      <circle cx="29" cy="13" r="1.5" fill={GOLD}/>
+      <circle cx="40" cy="11" r="2" fill={GOLD}/>
+      <circle cx="51" cy="13" r="1.5" fill={GOLD}/>
+      <path d="M22 32C18 28 14 30 13 34C16 33 19 35 22 38" fill={GOLD} opacity="0.9"/>
+      <path d="M58 32C62 28 66 30 67 34C64 33 61 35 58 38" fill={GOLD} opacity="0.9"/>
+      <path d="M40 28L42 36H50L44 41L46 49L40 44L34 49L36 41L30 36H38L40 28Z" fill={GOLD}/>
+      <path d="M20 58C27 62 33 63 40 63C47 63 53 62 60 58" stroke={GOLD} strokeWidth="1" fill="none"/>
+    </svg>
+  );
+}
+
+function StatCard({label,value,sub,color,accent}){
+  return (
+    <div className="card" style={{padding:"20px 22px",borderTop:"3px solid "+(accent?GOLD:NAVY)}}>
+      <div style={{fontSize:10,letterSpacing:"0.12em",textTransform:"uppercase",color:G400,fontWeight:500,marginBottom:6}}>{label}</div>
+      <div style={{fontSize:26,fontFamily:"'Playfair Display',serif",fontWeight:700,color:color||NAVY,lineHeight:1.1}}>{value}</div>
+      {sub&&<div style={{fontSize:12,color:G400,marginTop:5,fontFamily:"'JetBrains Mono',monospace"}}>{sub}</div>}
+    </div>
+  );
+}
+
+function FL({children}){
+  return <label style={{display:"block",fontSize:11,fontWeight:600,letterSpacing:"0.07em",textTransform:"uppercase",color:G600,marginBottom:6}}>{children}</label>;
+}
+
+function SectionHead({children}){
+  return <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:NAVY,marginBottom:14,paddingBottom:10,borderBottom:"1px solid "+G100}}>{children}</div>;
+}
+
+function PricePill({label,value,color}){
+  return (
+    <div style={{background:G50,borderRadius:8,padding:"14px 16px",border:"1px solid "+G100}}>
+      <div style={{fontSize:10,letterSpacing:"0.1em",textTransform:"uppercase",color:G400,marginBottom:6,fontWeight:500}}>{label}</div>
+      <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:18,fontWeight:700,color:color||G900}}>{value||"—"}</div>
+    </div>
+  );
+}
+
+function SidePill({side}){
+  const isBuy=side==="Buy";
+  return (
+    <span style={{display:"inline-flex",alignItems:"center",padding:"3px 12px",borderRadius:20,background:isBuy?"#dcfce7":"#fee2e2",color:isBuy?"#15803d":"#b91c1c",fontSize:11,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.03em"}}>
+      {side}
+    </span>
+  );
+}
+
+function pnlColor(v){
+  if(!v)return G600;
+  const n=parseFloat(v);
+  return n>0?GREEN:n<0?RED:G600;
+}
+
+function NavBtn({v,label,view,setView,setForm,setEditId}){
+  return (
+    <button className={"navbtn "+(view===v?"on":"")} onClick={()=>{setView(v);if(v==="add"){setForm(EMPTY);setEditId(null);}}}>
+      {label}
+    </button>
+  );
+}
+
+function FormInput({propKey,ph,type,form,setF}){
+  return <input type={type||"text"} placeholder={ph} value={form[propKey]} onChange={e=>setF(propKey,e.target.value)}/>;
+}
+
+function Filters({fprod,setFprod,fside,setFside,products}){
+  return (
+    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+      <select value={fprod} onChange={e=>setFprod(e.target.value)} style={{width:"auto",minWidth:110,fontSize:13,padding:"7px 32px 7px 12px",borderRadius:8}}>
+        {products.map(p=><option key={p}>{p}</option>)}
+      </select>
+      <div style={{display:"flex",background:G100,borderRadius:8,padding:3,gap:1}}>
+        {["All","Buy","Sell"].map(s=>(
+          <button key={s} className={"seg-btn "+(fside===s?"on":"off")} onClick={()=>setFside(s)}>{s}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Firebase ──────────────────────────────────────────────────────────────────
+const FB={apiKey:"AIzaSyCiY0rCcYBV-I4Wj7ybMsFgY6S00577Pnk",databaseURL:"https://imperial-crest-a206d-default-rtdb.firebaseio.com",projectId:"imperial-crest-a206d"};
+function getDb(){if(!firebase.apps.length)firebase.initializeApp(FB);return firebase.database();}
+function pushToFirebase(trades){
+  try{
+    const db=getDb(),obj={};
+    trades.forEach(t=>{if(t.id)obj[t.id]=t;});
+    db.ref("/trades").set(obj);
+    const closed=trades.filter(t=>t.status==="Closed"||t.exitPrice).reduce((s,t)=>s+(parseFloat(t.pnl)||0),0);
+    db.ref("/pnl/closed_pnl").set(Math.round(closed*100)/100);
+    db.ref("/pnl/updated_at").set(new Date().toISOString());
+  }catch(e){console.warn("Firebase push failed:",e.message);}
+}
+
+// ── FCPO TC (per contract) ────────────────────────────────────────────────────
+const FCPO_TC_PER_CONTRACT=1.27;
+const CONTRACTS_PER_TYPE={"Outright":1,"Spread":2,"Butterfly":4,"Double Fly":8};
+
+// ── Open position TC hint ─────────────────────────────────────────────────────
+function OpenTcHint({form,spec}){
+  const mono={fontSize:11,color:G400,marginTop:5,fontFamily:"'JetBrains Mono',monospace"};
+  const hasExit=form.exitPrice&&form.exitPrice.toString().trim()!=="";
+  if(hasExit){
+    const txt=form.product==="FCPO"
+      ?`Gross − (${form.lots||1}×${CONTRACTS_PER_TYPE[form.tradeType||"Outright"]} contracts × $${FCPO_TC_PER_CONTRACT} × 2 legs)`
+      :`(±ticks / ${spec.tickSize}) × Lots × $${spec.tickValue} − Lots × 2 × $${spec.tc} TC`;
+    return <div style={mono}><span>{txt}</span></div>;
+  }
+  const lots=parseFloat(form.lots)||1;
+  const contracts=CONTRACTS_PER_TYPE[form.tradeType||"Outright"]||1;
+  const entryTc=form.product==="FCPO"?lots*contracts*FCPO_TC_PER_CONTRACT:lots*parseFloat(spec.tc||0);
+  const roundTrip=entryTc*2;
+  const breakdown=form.product==="FCPO"?`${lots} × ${contracts} contracts × $${FCPO_TC_PER_CONTRACT}`:`${lots} lots × $${spec.tc}`;
+  return(
+    <div style={mono}>
+      <div>Entry TC paid: <strong style={{color:RED}}>{"−$"+entryTc.toFixed(2)}</strong> <span>({breakdown})</span></div>
+      <div>Exit TC on close: <strong style={{color:RED}}>{"−$"+entryTc.toFixed(2)}</strong> <span>(same)</span></div>
+      <div style={{borderTop:"1px solid #e5e7eb",marginTop:4,paddingTop:4}}>Round-trip TC: <strong style={{color:RED}}>{"−$"+roundTrip.toFixed(2)}</strong></div>
+    </div>
+  );
+}
+
+function App(){
+  const stored=localStorage.getItem("tic_v8_real");
+  // Always use DEFAULT_PRODUCTS for specs — never trust cache for tick values
+  localStorage.removeItem("tic_product_specs_v4");
+  const [trades,setTrades]=useState(stored?JSON.parse(stored):SAMPLE);
+  const [fbLoaded,setFbLoaded]=useState(false);
+  const [productSpecs,setProductSpecs]=useState(DEFAULT_PRODUCTS);
+  const [form,setForm]=useState(EMPTY);
+  const [view,setView]=useState("journal");
+  const [editId,setEditId]=useState(null);
+  const [detail,setDetail]=useState(null);
+  const [fprod,setFprod]=useState("All");
+  const [fside,setFside]=useState("All");
+  const [dateMode,setDateMode]=useState("all"); // "all" | "single" | "range"
+  const [dateSingle,setDateSingle]=useState("");
+  const [dateFrom,setDateFrom]=useState("");
+  const [dateTo,setDateTo]=useState("");
+  const [toast,setToast]=useState(null);
+  const [newProd,setNewProd]=useState({name:"",tickSize:"",tickValue:"",tc:"",currency:"USD",note:""});
+  const [sortDir,setSortDir]=useState("desc"); // "desc"=newest first  "asc"=oldest first
+
+  useEffect(()=>{
+    try{
+      const db=getDb();
+      db.ref("/trades").once("value").then(snap=>{
+        const data=snap.val();
+        if(data&&Object.keys(data).length>0){
+          const recalced=Object.values(data).map(t=>recalcTrade(t,DEFAULT_PRODUCTS));
+          pushToFirebase(recalced); // write corrected P&L back once
+          setTrades(recalced);
+        }
+        setFbLoaded(true);
+      }).catch(()=>setFbLoaded(true));
+    }catch(e){setFbLoaded(true);}
+  },[]);
+  // P&L recalc+push handled in Firebase onLoad above
+  useEffect(()=>{localStorage.setItem("tic_v8_real",JSON.stringify(trades));},[trades]);
+  useEffect(()=>{localStorage.setItem("tic_product_specs_v4",JSON.stringify(productSpecs));},[productSpecs]);
+
+  function getSpec(productName){
+    return productSpecs.find(p=>p.name===productName)||null;
+  }
+
+  function showToast(msg,err){
+    setToast({msg,err});
+    setTimeout(()=>setToast(null),2600);
+  }
+
+  const filtered=useMemo(()=>(
+    [...trades]
+      .filter(t=>fprod==="All"||t.product===fprod)
+      .filter(t=>fside==="All"||t.side===fside)
+      .filter(t=>{
+        if(dateMode==="single"&&dateSingle)return t.date===dateSingle;
+        if(dateMode==="range"){
+          if(dateFrom&&dateTo)return t.date>=dateFrom&&t.date<=dateTo;
+          if(dateFrom)return t.date>=dateFrom;
+          if(dateTo)return t.date<=dateTo;
+        }
+        return true;
+      })
+      .sort((a,b)=>{
+          const cmp=a.date<b.date?-1:a.date>b.date?1:0;
+          return sortDir==="desc"?-cmp:cmp;
+        })
+  ),[trades,fprod,fside,dateMode,dateSingle,dateFrom,dateTo,sortDir]);
+
+  const products=["All",...Array.from(new Set(trades.map(t=>t.product)))];
+  const allProductNames=productSpecs.map(p=>p.name);
+
+  function setF(key,val){
+    setForm(p=>{
+      const n={...p,[key]:val};
+      if(key==="exitPrice"){n.status=val.trim()!==""?"Closed":"Open";}
+      // Auto-detect trade type from FCPO contract
+      if(key==="contract"&&n.product==="FCPO"){
+        if(val.includes("1mo Butterfly"))n.tradeType="Butterfly";
+        else if(val.includes("2mo Butterfly"))n.tradeType="Double Fly";
+        else if(val.includes("Calendar")){
+          const ALL=["May26","FCPO Jun26","FCPO Jul26","Aug26","Sep26","Oct26","Nov26","Dec26","Jan27","Feb27","Mar27","Apr27","May27","Jul27","Sep27","Nov27","Jan28"];
+          const m=val.match(/FCPO (\w+)-(\w+) Calendar/);
+          n.tradeType=m&&(ALL.indexOf(m[2])-ALL.indexOf(m[1]))===1?"Spread":"Spread";
+        } else n.tradeType="Outright";
+      }
+      // Recalculate PnL
+      const spec=getSpec(n.product);
+      if(spec&&spec.tickValue>0&&["entryPrice","exitPrice","lots","side","product","status","tradeType","contract"].includes(key)){
+        const l=parseFloat(n.lots); if(isNaN(l)||l<=0)return n;
+        const hasExit=n.exitPrice&&n.exitPrice.toString().trim()!=="";
+        const legs=hasExit?2:1;
+        const tc=n.product==="FCPO"?l*(CONTRACTS_PER_TYPE[n.tradeType||"Outright"]||1)*FCPO_TC_PER_CONTRACT*legs:l*parseFloat(spec.tc||0)*legs;
+        const e=parseFloat(n.entryPrice);
+        if(!isNaN(e)){
+          if(!hasExit){n.pnl=(-(n.product==="FCPO"?l*(CONTRACTS_PER_TYPE[n.tradeType||"Outright"]||1)*FCPO_TC_PER_CONTRACT:l*parseFloat(spec.tc||0))).toFixed(2);}
+          else{
+            const x=parseFloat(n.exitPrice);
+            if(!isNaN(x)){const diff=n.side==="Buy"?(x-e):(e-x);const ticks=Math.round((diff/(n.product==="FCPO"?1:spec.tickSize))*1e10)/1e10;const tv=n.product==="FCPO"?6.358875:parseFloat(spec.tickValue);n.pnl=(ticks*l*tv-tc).toFixed(2);}
+          }
+        }
+      }
+      return n;
+    });
+  }
+
+  function save(){
+    if(!form.product||!form.contract){showToast("Product and Contract are required",true);return;}
+    const cleanForm=recalcTrade({...form},DEFAULT_PRODUCTS);
+    if(editId!==null){
+      setTrades(ts=>{const updated=ts.map(t=>t.id===editId?{...cleanForm,id:editId}:t);pushToFirebase(updated);return updated;});
+      showToast("Trade updated successfully");
+      setEditId(null);
+    } else {
+      setTrades(ts=>{const updated=[...ts,{...cleanForm,id:Date.now()}];pushToFirebase(updated);return updated;});
+      showToast("Trade logged successfully");
+    }
+    setForm(EMPTY);
+    setView("journal");
+  }
+
+  const [confirmDelete,setConfirmDelete]=useState(null);
+  function del(id){ setConfirmDelete(id); }
+  function confirmDel(){
+    if(typeof confirmDelete==="string"&&confirmDelete.startsWith("prod_")){
+      const name=confirmDelete.slice(5);
+      setProductSpecs(ps=>ps.filter(x=>x.name!==name));
+      showToast("Product removed");
+    } else {
+      setTrades(ts=>{const updated=ts.filter(t=>t.id!==confirmDelete);pushToFirebase(updated);return updated;});
+      showToast("Trade deleted");
+      setDetail(null);
+    }
+    setConfirmDelete(null);
+  }
+
+  function edit(t){
+    const spec=getSpec(t.product);
+    const recalced=recalcTrade(t,DEFAULT_PRODUCTS);
+    setForm(recalced);
+    setEditId(t.id);
+    setView("add");
+    setDetail(null);
+  }
+
+  function exportCSV(){
+    const cols=["date","closeDate","product","contract","side","lots","entryPrice","reason","target","stop","exitPrice","pnl","learnings"];
+    const hdr=["Entry Date","Close Date","Product","Contract","Side","Lots","Entry","Reason","Target","Stop","Exit","Net P&L (USD)","Learnings"];
+    const rows=trades.map(t=>cols.map(c=>'"'+(t[c]||"").toString().replace(/"/g,'""')+'"').join(","));
+    const a=document.createElement("a");
+    a.href="data:text/csv;charset=utf-8,"+encodeURIComponent([hdr.join(","),...rows].join("\n"));
+    a.download="ImperialCrest_Trades.csv";
+    a.click();
+  }
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f4f5f7"}}>
+
+      {/* Toast */}
+      {toast&&(
+        <div style={{position:"fixed",top:24,right:24,zIndex:9999,padding:"13px 20px",borderRadius:10,background:toast.err?"#7f1d1d":NAVY,color:"#fff",fontSize:13,fontWeight:500,boxShadow:"0 8px 32px rgba(0,0,0,0.2)",display:"flex",alignItems:"center",gap:8}}>
+          <span>{toast.err?"⚠":"✓"}</span>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {confirmDelete&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(5,10,25,0.65)",zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div className="fade" style={{background:"#fff",borderRadius:14,padding:"32px 36px",maxWidth:380,width:"100%",boxShadow:"0 24px 80px rgba(0,0,0,0.25)",textAlign:"center"}}>
+            <div style={{fontSize:32,marginBottom:12}}>{typeof confirmDelete==="string"&&confirmDelete.startsWith("prod_")?"📦":"🗑"}</div>
+            <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:700,color:NAVY,marginBottom:8}}>
+              {typeof confirmDelete==="string"&&confirmDelete.startsWith("prod_")?"Remove Product?":"Delete Trade?"}
+            </div>
+            <div style={{fontSize:14,color:G600,marginBottom:24,lineHeight:1.6}}>
+              {typeof confirmDelete==="string"&&confirmDelete.startsWith("prod_")
+                ? `Remove "${confirmDelete.slice(5)}" from your product list? This cannot be undone.`
+                : "This trade will be permanently removed. This cannot be undone."}
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+              <button onClick={confirmDel} style={{padding:"11px 28px",background:RED,color:"#fff",border:"none",borderRadius:8,fontSize:14,fontWeight:600}}>
+                {typeof confirmDelete==="string"&&confirmDelete.startsWith("prod_")?"Yes, Remove":"Yes, Delete"}
+              </button>
+              <button onClick={()=>setConfirmDelete(null)} style={{padding:"11px 22px",background:G100,color:G600,border:"none",borderRadius:8,fontSize:14,fontWeight:500}}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Detail Modal */}
+      {detail&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(5,10,25,0.65)",zIndex:900,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setDetail(null)}>
+          <div className="fade" onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:660,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 80px rgba(0,0,0,0.25)"}}>
+
+            {/* Hero */}
+            <div style={{background:"linear-gradient(135deg,"+NAVY+" 0%,"+NAVY2+" 100%)",padding:"28px 30px 24px",borderRadius:"16px 16px 0 0",position:"relative",overflow:"hidden"}}>
+              <div style={{position:"absolute",top:-30,right:-20,opacity:0.05}}><Crest sz={160}/></div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
+                    <span style={{fontFamily:"'Playfair Display',serif",fontSize:34,fontWeight:700,color:"#fff",lineHeight:1}}>{detail.product}</span>
+                    <span style={{padding:"4px 12px",borderRadius:20,background:detail.side==="Buy"?"rgba(134,239,172,0.15)":"rgba(252,165,165,0.15)",color:detail.side==="Buy"?"#86efac":"#fca5a5",fontSize:11,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{detail.side}</span>
+                    <span style={{padding:"4px 12px",borderRadius:20,background:detail.status==="Open"?"rgba(253,224,71,0.15)":"rgba(134,239,172,0.15)",color:detail.status==="Open"?"#fde047":"#86efac",fontSize:11,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{detail.status||"Closed"}</span>
+                  </div>
+                  <div style={{color:"rgba(255,255,255,0.65)",fontSize:16,marginBottom:4,fontWeight:500}}>{detail.contract}</div>
+                  <div style={{color:"rgba(255,255,255,0.38)",fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}>{detail.date}{detail.closeDate&&detail.closeDate!==detail.date?" → "+detail.closeDate:""} · {detail.lots} lots</div>
+                </div>
+                {detail.pnl&&(
+                  <div style={{textAlign:"right"}}>
+                    {(()=>{
+                      const totalPnl=parseFloat(detail.pnl);
+                      return (
+                        <div>
+                          <div style={{fontSize:10,letterSpacing:"0.12em",textTransform:"uppercase",color:"rgba(255,255,255,0.4)",marginBottom:4}}>Net P&L</div>
+                          <div style={{fontFamily:"'Playfair Display',serif",fontSize:38,fontWeight:700,color:totalPnl>=0?"#86efac":"#fca5a5",lineHeight:1}}>
+                            {totalPnl>=0?"+":""}{totalPnl.toFixed(2)}
+                            <span style={{fontSize:14,color:"rgba(255,255,255,0.35)",marginLeft:4}}>USD</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+              <div style={{position:"absolute",bottom:0,left:0,right:0,height:2,background:"linear-gradient(90deg,transparent,"+GOLD+",transparent)"}}/>
+            </div>
+
+            <div style={{padding:"24px 30px",display:"flex",flexDirection:"column",gap:18}}>
+              {/* Price levels */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+                <PricePill label="Entry" value={detail.entryPrice}/>
+                <PricePill label="Target" value={detail.target} color={GREEN}/>
+                <PricePill label="Stop" value={detail.stop} color={RED}/>
+                <PricePill label="Exit" value={detail.exitPrice} color={NAVY}/>
+              </div>
+
+              {/* Rationale */}
+              <div style={{background:G50,borderRadius:10,padding:"16px 18px",border:"1px solid "+G100}}>
+                <div style={{fontSize:10,letterSpacing:"0.12em",textTransform:"uppercase",color:G400,fontWeight:500,marginBottom:8}}>Trade Rationale</div>
+                <div style={{fontSize:14,color:G700,lineHeight:1.85}}>{detail.reason||"—"}</div>
+              </div>
+
+              {/* Learnings */}
+              {detail.learnings&&(
+                <div style={{borderRadius:10,padding:"16px 18px",background:GOLDBG,border:"1px solid #e8d9b0",borderLeft:"3px solid "+GOLD}}>
+                  <div style={{fontSize:10,letterSpacing:"0.12em",textTransform:"uppercase",color:"#92721c",fontWeight:500,marginBottom:8}}>💡 Learnings</div>
+                  <div style={{fontSize:14,color:G700,lineHeight:1.85,fontStyle:"italic"}}>{detail.learnings}</div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div style={{display:"flex",gap:8,paddingTop:4}}>
+                <button onClick={()=>edit(detail)} style={{flex:1,padding:"11px",background:NAVY,color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:600}}>Edit Trade</button>
+                <button onClick={()=>del(detail.id)} style={{padding:"11px 18px",background:"#fff",color:RED,border:"1.5px solid #fca5a5",borderRadius:8,fontSize:13,fontWeight:500}}>Delete</button>
+                <button onClick={()=>setDetail(null)} style={{padding:"11px 18px",background:G100,color:G600,border:"none",borderRadius:8,fontSize:13,fontWeight:500}}>Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
+      <div style={{background:"#fff",borderBottom:"1px solid "+G200,position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 12px rgba(0,0,0,0.05)"}}>
+        <div style={{maxWidth:1280,margin:"0 auto",padding:"0 28px",display:"flex",alignItems:"center",justifyContent:"space-between",height:66}}>
+          <div style={{display:"flex",alignItems:"center",gap:14}}>
+            <Crest sz={44}/>
+            <div>
+              <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:700,color:NAVY,lineHeight:1.1}}>The Imperial Crest</div>
+              <div style={{display:"flex",alignItems:"center",gap:7,marginTop:3}}>
+                <span style={{fontSize:11,color:GOLD,fontWeight:600,letterSpacing:"0.05em",textTransform:"uppercase"}}>Futures Journal</span>
+                <span style={{width:3,height:3,borderRadius:"50%",background:G300}}/>
+                <span style={{fontSize:11,color:G400,fontWeight:400}}>Nikit Singh Parihar</span>
+              </div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <NavBtn v="journal" label="Dashboard" view={view} setView={setView} setForm={setForm} setEditId={setEditId}/>
+            <NavBtn v="tradelog" label="Trade Log" view={view} setView={setView} setForm={setForm} setEditId={setEditId}/>
+            <NavBtn v="products" label="⚙ Products" view={view} setView={setView} setForm={setForm} setEditId={setEditId}/>
+            <NavBtn v="add" label="+ Log Trade" view={view} setView={setView} setForm={setForm} setEditId={setEditId}/>
+            <div style={{width:1,height:24,background:G200,margin:"0 4px"}}/>
+            <button onClick={exportCSV} style={{padding:"8px 14px",background:GOLDBG,color:"#92721c",border:"1.5px solid #e8d9b0",borderRadius:8,fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:5}}>
+              ↓ CSV
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main */}
+      <div style={{maxWidth:1280,margin:"0 auto",padding:"32px 28px 80px"}}>
+
+        {/* ── DASHBOARD ── */}
+        {view==="journal"&&(
+          <div className="fade">
+            <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:14}}>
+              <div>
+                <div style={{fontFamily:"'Playfair Display',serif",fontSize:32,fontWeight:700,color:NAVY}}>Dashboard</div>
+                <div style={{fontSize:13,color:G400,marginTop:5}}>Quick view — entry, exit &amp; P&amp;L at a glance</div>
+              </div>
+              <Filters fprod={fprod} setFprod={setFprod} fside={fside} setFside={setFside} products={products}/>
+            </div>
+
+            {/* Date filter bar */}
+            <div className="card" style={{padding:"14px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+              <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:G600,whiteSpace:"nowrap"}}>Date Filter</div>
+              <div style={{display:"flex",background:G100,borderRadius:8,padding:3,gap:1}}>
+                {[["all","All"],["single","Single Date"],["range","Date Range"]].map(([m,lbl])=>(
+                  <button key={m} className={"seg-btn "+(dateMode===m?"on":"off")} onClick={()=>setDateMode(m)}>{lbl}</button>
+                ))}
+              </div>
+
+              {dateMode==="single"&&(
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <input type="date" value={dateSingle} onChange={e=>setDateSingle(e.target.value)}
+                    style={{width:"auto",padding:"7px 12px",fontSize:13,borderRadius:8}}/>
+                  {dateSingle&&<button onClick={()=>setDateSingle("")} style={{padding:"6px 10px",background:"#fff",color:G600,border:"1.5px solid "+G200,borderRadius:6,fontSize:12,fontWeight:500}}>✕ Clear</button>}
+                </div>
+              )}
+
+              {dateMode==="range"&&(
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
+                    style={{width:"auto",padding:"7px 12px",fontSize:13,borderRadius:8}}/>
+                  <span style={{fontSize:13,color:G400,fontWeight:500}}>→</span>
+                  <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}
+                    style={{width:"auto",padding:"7px 12px",fontSize:13,borderRadius:8}}/>
+                  {(dateFrom||dateTo)&&<button onClick={()=>{setDateFrom("");setDateTo("");}} style={{padding:"6px 10px",background:"#fff",color:G600,border:"1.5px solid "+G200,borderRadius:6,fontSize:12,fontWeight:500}}>✕ Clear</button>}
+                </div>
+              )}
+
+              {/* Active filter badge */}
+              {(dateMode==="single"&&dateSingle)||(dateMode==="range"&&(dateFrom||dateTo))?(
+                <div style={{fontSize:12,color:GOLD,fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>
+                  {filtered.length} trade{filtered.length!==1?"s":""} found
+                </div>
+              ):null}
+
+              {/* Sort */}
+              <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:G600,whiteSpace:"nowrap"}}>Sort Date</span>
+                <div style={{display:"flex",background:G100,borderRadius:8,padding:3,gap:1}}>
+                  <button className={"seg-btn "+(sortDir==="desc"?"on":"off")} onClick={()=>setSortDir("desc")}>↓ Newest</button>
+                  <button className={"seg-btn "+(sortDir==="asc"?"on":"off")} onClick={()=>setSortDir("asc")}>↑ Oldest</button>
+                </div>
+              </div>
+            </div>
+
+            {/* Stats — based on filtered trades */}
+            {(()=>{
+              // Always recalc live for stats
+              const recalcFiltered=filtered.map(t=>recalcTrade(t,DEFAULT_PRODUCTS));
+              function effPnl(t){
+                if(t.pnl==="")return null;
+                return parseFloat(t.pnl);
+              }
+              const vp=recalcFiltered.filter(t=>t.pnl!=="");
+              const epnls=vp.map(t=>({t,ep:effPnl(t)})).filter(x=>x.ep!==null);
+              const tot=epnls.reduce((s,x)=>s+x.ep,0);
+              // Avg R:R — only trades where entry, target AND stop are all set
+              const rrTrades=filtered.filter(t=>{
+                const e=parseFloat(t.entryPrice),tg=parseFloat(t.target),st=parseFloat(t.stop);
+                return !isNaN(e)&&!isNaN(tg)&&!isNaN(st)&&t.entryPrice!==""&&t.target!==""&&t.stop!=="";
+              });
+              const rrVals=rrTrades.map(t=>{
+                const e=parseFloat(t.entryPrice),tg=parseFloat(t.target),st=parseFloat(t.stop);
+                const reward=Math.abs(tg-e);
+                const risk=Math.abs(e-st);
+                return risk>0?reward/risk:null;
+              }).filter(x=>x!==null);
+              const avgRR=rrVals.length?(rrVals.reduce((s,v)=>s+v,0)/rrVals.length):null;
+              const totalContracts=filtered.reduce((s,t)=>s+getContracts(t.lots,t.tradeType||"Outright",t.status),0);
+              return (
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14,marginBottom:26}}>
+                  <StatCard label="Net P&L (USD)" value={(tot>=0?"+":"")+parseFloat(tot).toFixed(2)} color={tot>=0?GREEN:RED} accent={true}/>
+                  <StatCard label="Avg Risk : Reward" value={avgRR?"1 : "+avgRR.toFixed(2):"—"} sub={avgRR?rrVals.length+" trade"+(rrVals.length!==1?"s":"")+" with levels set":"Set entry, target & stop to calculate"} color={GOLD}/>
+                  <StatCard label="Total Contracts" value={totalContracts} sub={filtered.length+" trade"+(filtered.length!==1?"s":"")}/>
+                </div>
+              );
+            })()}
+
+            {/* Table */}
+            {(()=>{
+              // ONE row per trade, always on entry date.
+              // Open:   P&L = −entryTC
+              // Closed: P&L = Gross − entryTC − exitTC  (full net)
+              function expandRows(trades){
+                const rows=[];
+                trades.forEach((t,idx)=>{
+                  // Always recalculate live from entry/exit — never trust stored pnl
+                  const _live=recalcTrade(t,DEFAULT_PRODUCTS);
+                  const pnlDisplay=_live.pnl!==""?parseFloat(_live.pnl).toFixed(2):"—";
+                  rows.push({t,date:t.date,pnlDisplay,status:t.status||"Closed",idx});
+                });
+                return rows;
+              }
+
+              const rows=expandRows(filtered);
+              const COLS="90px 76px 80px 1fr 70px 50px 80px 80px 90px 86px 110px 56px";
+
+              function StatusPill({status}){
+                const isOpen=status==="Open";
+                return <span style={{display:"inline-flex",alignItems:"center",padding:"3px 10px",borderRadius:20,background:isOpen?"#fef9c3":"#f0fdf4",color:isOpen?"#854d0e":"#166534",fontSize:11,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{status}</span>;
+              }
+
+              function TypePill({type}){
+                const colors={"Outright":{bg:"#f0f4ff",color:"#3730a3"},"Spread":{bg:"#f0fdf4",color:"#166534"},"Butterfly":{bg:"#fff7ed",color:"#9a3412"},"Double Fly":{bg:"#fdf4ff",color:"#7e22ce"}};
+                const c=colors[type]||{bg:G100,color:G600};
+                return <span style={{display:"inline-flex",alignItems:"center",padding:"3px 8px",borderRadius:20,background:c.bg,color:c.color,fontSize:10,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",whiteSpace:"nowrap"}}>{type||"Outright"}</span>;
+              }
+
+              return (
+                <div className="card" style={{overflow:"hidden"}}>
+                  <div style={{display:"grid",gridTemplateColumns:COLS,padding:"11px 20px",background:NAVY,gap:10,alignItems:"center"}}>
+                    {["Date","Type","Product","Contract","Side","Lots","Ctrs","Entry","Exit","Status","Net P&L",""].map((h,i)=>(
+                      <div key={i} style={{fontSize:10,letterSpacing:"0.1em",textTransform:"uppercase",color:GOLD2,fontWeight:600}}>{h}</div>
+                    ))}
+                  </div>
+
+                  {filtered.length===0&&(
+                    <div style={{textAlign:"center",padding:"60px 0",color:G400,fontSize:14}}>
+                      No trades yet — click <strong style={{color:NAVY}}>+ Log Trade</strong> to begin
+                    </div>
+                  )}
+
+                  {rows.map((row,ri)=>{
+                    const {t,date,pnlDisplay,status}=row;
+                    const pv=parseFloat(pnlDisplay);
+                    const isMultiDay=t.closeDate&&t.closeDate!==t.date&&t.status!=="Open";
+                    const lc=!isNaN(pv)?(pv>0?GREEN:pv<0?RED:G300):G300;
+                    return (
+                      <div key={t.id} className="trow" style={{display:"grid",gridTemplateColumns:COLS,padding:"12px 20px",gap:10,alignItems:"center",borderBottom:"1px solid "+G100,background:ri%2===0?"#fff":G50,borderLeft:"3px solid "+lc}}>
+                        {/* Date */}
+                        <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:G400}}>
+                          {date}
+                          {isMultiDay&&<span style={{display:"block",fontSize:9,color:GOLD,fontWeight:700,letterSpacing:"0.06em",marginTop:2}}>→ {t.closeDate}</span>}
+                        </div>
+                        {/* Type */}
+                        <div><TypePill type={t.tradeType||"Outright"}/></div>
+                        {/* Product */}
+                        <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:700,color:NAVY}}>{t.product}</div>
+                        {/* Contract */}
+                        <div style={{fontSize:13,color:G700,fontWeight:500}}>{t.contract}</div>
+                        {/* Side */}
+                        <div><SidePill side={t.side}/></div>
+                        {/* Lots */}
+                        <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,color:G700}}>{t.lots}</div>
+                        {/* Contracts */}
+                        <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,color:NAVY,fontWeight:700}}>{getContracts(t.lots,t.tradeType||"Outright",t.status)}</div>
+                        {/* Entry price */}
+                        <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,color:G700}}>{t.entryPrice}</div>
+                        {/* Exit price */}
+                        <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:13,color:G700}}>{t.exitPrice||"—"}</div>
+                        {/* Status */}
+                        <div><StatusPill status={status}/></div>
+                        {/* P&L */}
+                        <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:14,fontWeight:700,color:pnlColor(pnlDisplay)}}>
+                          {pnlDisplay!=="—"?(pv>=0?"+":"")+pv.toFixed(2):"—"}
+                        </div>
+                        {/* View */}
+                        <div>
+                          <button onClick={()=>setDetail(t)} style={{padding:"5px 12px",background:G100,color:NAVY,border:"none",borderRadius:6,fontSize:12,fontWeight:600}}>View</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+            <div style={{fontSize:12,color:G400,marginTop:8,textAlign:"right"}}>Click View for full trade details · Data saves automatically</div>
+          </div>
+        )}
+
+        {/* ── TRADE LOG ── */}
+        {view==="tradelog"&&(
+          <div className="fade">
+            <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:26,flexWrap:"wrap",gap:14}}>
+              <div>
+                <div style={{fontFamily:"'Playfair Display',serif",fontSize:32,fontWeight:700,color:NAVY}}>Trade Log</div>
+                <div style={{fontSize:13,color:G400,marginTop:5}}>Full detail — rationale, levels &amp; learnings</div>
+              </div>
+              <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                <Filters fprod={fprod} setFprod={setFprod} fside={fside} setFside={setFside} products={products}/>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:G600,whiteSpace:"nowrap"}}>Sort</span>
+                  <div style={{display:"flex",background:G100,borderRadius:8,padding:3,gap:1}}>
+                    <button className={"seg-btn "+(sortDir==="desc"?"on":"off")} onClick={()=>setSortDir("desc")}>↓ Newest</button>
+                    <button className={"seg-btn "+(sortDir==="asc"?"on":"off")} onClick={()=>setSortDir("asc")}>↑ Oldest</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {filtered.length===0&&<div style={{textAlign:"center",padding:"60px 0",color:G400,fontSize:14}}>No trades found.</div>}
+
+            <div style={{display:"flex",flexDirection:"column",gap:16}}>
+              {filtered.map(t=>{
+                const _t=recalcTrade(t,DEFAULT_PRODUCTS);
+                const pv=parseFloat(_t.pnl);
+                const lc=pv>0?GREEN:pv<0?RED:G300;
+                t=_t;
+                return (
+                  <div key={t.id} className="card" style={{overflow:"hidden",borderLeft:"4px solid "+lc}}>
+                    {/* Top */}
+                    <div style={{padding:"18px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12,borderBottom:"1px solid "+G100}}>
+                      <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                        <span style={{fontFamily:"'Playfair Display',serif",fontSize:22,fontWeight:700,color:NAVY}}>{t.product}</span>
+                        <span style={{fontSize:15,color:G600,fontWeight:500}}>{t.contract}</span>
+                        <SidePill side={t.side}/>
+                        <span style={{display:"inline-flex",alignItems:"center",padding:"3px 10px",borderRadius:20,background:t.status==="Open"?"#fef9c3":"#f0fdf4",color:t.status==="Open"?"#854d0e":"#166534",fontSize:11,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{t.status||"Closed"}</span>
+                        <span style={{fontSize:12,color:G400,fontFamily:"'JetBrains Mono',monospace"}}>{t.date}{t.closeDate&&t.closeDate!==t.date?" → "+t.closeDate:""} · {t.lots} lots</span>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:12}}>
+                        {t.pnl&&(
+                          <div style={{textAlign:"right"}}>
+                            <div style={{fontSize:10,color:G400,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>Net P&L</div>
+                            <div style={{fontFamily:"'Playfair Display',serif",fontSize:24,fontWeight:700,color:pnlColor(t.pnl)}}>{pv>=0?"+":""}{parseFloat(t.pnl).toLocaleString()} <span style={{fontSize:11,color:G400}}>USD</span></div>
+                          </div>
+                        )}
+                        <div style={{display:"flex",gap:6}}>
+                          <button onClick={()=>edit(t)} style={{padding:"7px 16px",background:NAVY,color:"#fff",border:"none",borderRadius:7,fontSize:12,fontWeight:600}}>Edit</button>
+                          <button onClick={()=>del(t.id)} style={{padding:"7px 14px",background:"#fff",color:RED,border:"1.5px solid #fca5a5",borderRadius:7,fontSize:12,fontWeight:500}}>Delete</button>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Price levels */}
+                    <div style={{padding:"16px 24px",display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,borderBottom:"1px solid "+G100,background:G50}}>
+                      <PricePill label="Entry Price" value={t.entryPrice}/>
+                      <PricePill label="Target" value={t.target} color={GREEN}/>
+                      <PricePill label="Stop" value={t.stop} color={RED}/>
+                      <PricePill label="Exit Price" value={t.exitPrice} color={NAVY}/>
+                    </div>
+                    {/* Rationale + Learnings */}
+                    <div style={{padding:"16px 24px",display:"grid",gridTemplateColumns:t.learnings?"1fr 1fr":"1fr",gap:16}}>
+                      <div style={{background:G50,borderRadius:8,padding:"14px 16px"}}>
+                        <div style={{fontSize:10,letterSpacing:"0.1em",textTransform:"uppercase",color:G400,fontWeight:500,marginBottom:8}}>Rationale</div>
+                        <div style={{fontSize:14,color:G700,lineHeight:1.85}}>{t.reason||"—"}</div>
+                      </div>
+                      {t.learnings&&(
+                        <div style={{background:GOLDBG,borderRadius:8,padding:"14px 16px",borderLeft:"3px solid "+GOLD}}>
+                          <div style={{fontSize:10,letterSpacing:"0.1em",textTransform:"uppercase",color:"#92721c",fontWeight:500,marginBottom:8}}>💡 Learnings</div>
+                          <div style={{fontSize:14,color:G700,lineHeight:1.85,fontStyle:"italic"}}>{t.learnings}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── LOG TRADE ── */}
+        {view==="add"&&(
+          <div className="fade" style={{maxWidth:780}}>
+            <div style={{marginBottom:26}}>
+              <div style={{fontFamily:"'Playfair Display',serif",fontSize:32,fontWeight:700,color:NAVY}}>{editId?"Edit Trade":"Log New Trade"}</div>
+              <div style={{fontSize:13,color:G400,marginTop:5}}>{editId?"Update trade details below":"Record the details of your trade"}</div>
+            </div>
+
+            <div className="card" style={{padding:"28px 30px"}}>
+              <SectionHead>Trade Identity</SectionHead>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr 1fr",gap:14,marginBottom:24}}>
+                <div><FL>Entry Date</FL><input type="date" value={form.date} onChange={e=>setForm(p=>({...p,date:e.target.value}))}/></div>
+                <div><FL>Close Date</FL><input type="date" value={form.closeDate||""} onChange={e=>setForm(p=>({...p,closeDate:e.target.value}))} style={{borderColor:form.closeDate&&form.closeDate!==form.date?"#c9a84c":""}}/></div>
+                <div><FL>Type</FL>
+                  <select value={form.tradeType||"Outright"} onChange={e=>setF("tradeType",e.target.value)}>
+                    {TRADE_TYPES.map(tt=><option key={tt}>{tt}</option>)}
+                  </select>
+                </div>
+                <div><FL>Product</FL>
+                  <select value={form.product} onChange={e=>setF("product",e.target.value)}>
+                    {allProductNames.map(i=><option key={i}>{i}</option>)}
+                  </select>
+                </div>
+                <div><FL>Contract</FL>
+                  {form.product==="FCPO"?(
+                    <select value={form.contract} onChange={e=>setF("contract",e.target.value)}>
+                      <option value="">— Select contract —</option>
+                      <optgroup label="Outrights">
+                        {["FCPO May26","FCPO Jun26","FCPO Jul26","FCPO Aug26","FCPO Sep26","FCPO Oct26","FCPO Nov26","FCPO Dec26","FCPO Jan27","FCPO Feb27","FCPO Mar27","FCPO Apr27","FCPO May27","FCPO Jul27","FCPO Sep27","FCPO Nov27","FCPO Jan28"].map(c=><option key={c}>{c}</option>)}
+                      </optgroup>
+                      <optgroup label="Spreads">
+                        {["FCPO May26-Jun26 Calendar","FCPO Jun26-Jul26 Calendar","FCPO Jul26-Aug26 Calendar","FCPO Aug26-Sep26 Calendar","FCPO Sep26-Oct26 Calendar","FCPO Oct26-Nov26 Calendar","FCPO Nov26-Dec26 Calendar","FCPO Dec26-Jan27 Calendar","FCPO Jan27-Feb27 Calendar","FCPO Feb27-Mar27 Calendar","FCPO Mar27-Apr27 Calendar","FCPO Apr27-May27 Calendar","FCPO May27-Jul27 Calendar","FCPO Jul27-Sep27 Calendar","FCPO Sep27-Nov27 Calendar","FCPO Nov27-Jan28 Calendar"].map(c=><option key={c}>{c}</option>)}
+                      </optgroup>
+                      <optgroup label="Jumbos">
+                        {["FCPO May26-Jul26 Calendar","FCPO Jun26-Aug26 Calendar","FCPO Jul26-Sep26 Calendar","FCPO Aug26-Oct26 Calendar","FCPO Sep26-Nov26 Calendar","FCPO Oct26-Dec26 Calendar","FCPO Nov26-Jan27 Calendar","FCPO Dec26-Feb27 Calendar","FCPO Jan27-Mar27 Calendar","FCPO Feb27-Apr27 Calendar","FCPO Mar27-May27 Calendar","FCPO Apr27-Jul27 Calendar","FCPO May27-Sep27 Calendar","FCPO Jul27-Nov27 Calendar","FCPO Sep27-Jan28 Calendar"].map(c=><option key={c}>{c}</option>)}
+                      </optgroup>
+                      <optgroup label="Butterflies">
+                        {["FCPO May26 1mo Butterfly","FCPO Jun26 1mo Butterfly","FCPO Jul26 1mo Butterfly","FCPO Aug26 1mo Butterfly","FCPO Sep26 1mo Butterfly","FCPO Oct26 1mo Butterfly","FCPO Nov26 1mo Butterfly","FCPO Dec26 1mo Butterfly","FCPO Jan27 1mo Butterfly","FCPO Feb27 1mo Butterfly","FCPO Mar27 1mo Butterfly","FCPO Apr27 1mo Butterfly","FCPO May27 1mo Butterfly","FCPO Jul27 1mo Butterfly","FCPO Sep27 1mo Butterfly"].map(c=><option key={c}>{c}</option>)}
+                      </optgroup>
+                    </select>
+                  ):(
+                    <FormInput propKey="contract" ph="e.g. Jun26" form={form} setF={setF}/>
+                  )}
+                </div>
+                <div><FL>Side</FL>
+                  <select value={form.side} onChange={e=>setF("side",e.target.value)}>
+                    {SIDES.map(s=><option key={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div><FL>Status</FL>
+                  <select value={form.status||"Closed"} onChange={e=>setF("status",e.target.value)}>
+                    {STATUSES.map(s=><option key={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <SectionHead>Price Levels</SectionHead>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginBottom:24}}>
+                <div>
+                  <FL>Lots</FL>
+                  <FormInput propKey="lots" ph="10" form={form} setF={setF}/>
+                  {form.lots&&parseFloat(form.lots)>0&&(
+                    <div style={{marginTop:5,fontSize:11,color:G400,fontFamily:"'JetBrains Mono',monospace"}}>
+                      <span style={{color:NAVY,fontWeight:700}}>{getContracts(form.lots,form.tradeType||"Outright",form.status)}</span> contracts
+                      <span style={{marginLeft:6,color:GOLD,fontSize:10}}>({form.tradeType||"Outright"}: ×{CONTRACTS_PER_LOT[form.tradeType||"Outright"]})</span>
+                    </div>
+                  )}
+                </div>
+                <div><FL>Entry Price</FL><FormInput propKey="entryPrice" ph="-3" form={form} setF={setF}/></div>
+                <div><FL>Target</FL><FormInput propKey="target" ph="-8" form={form} setF={setF}/></div>
+                <div><FL>Stop</FL><FormInput propKey="stop" ph="1" form={form} setF={setF}/></div>
+                <div><FL>Exit Price</FL><FormInput propKey="exitPrice" ph="-7" form={form} setF={setF}/></div>
+              </div>
+
+              <SectionHead>Result</SectionHead>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:24}}>
+                <div>
+                  {(()=>{
+                    const spec=getSpec(form.product);
+                    const hasSpec=spec&&spec.tickValue>0;
+                    return (
+                      <div>
+                        <FL>{hasSpec?"Net P&L — Auto-Calculated ("+spec.currency+")":"P&L"}</FL>
+                        {hasSpec?(
+                          <div style={{position:"relative"}}>
+                            <input readOnly value={form.pnl} placeholder="Fill entry, exit &amp; lots above"
+                              style={{background:GOLDBG,borderColor:GOLD,color:parseFloat(form.pnl)>0?GREEN:parseFloat(form.pnl)<0?RED:G700,fontWeight:700,fontSize:16,cursor:"default"}}/>
+                            <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:9,letterSpacing:"0.1em",textTransform:"uppercase",color:GOLD,fontWeight:700,background:GOLDBG,padding:"2px 6px",borderRadius:4,border:"1px solid #e8d9b0"}}>AUTO</span>
+                          </div>
+                        ):(
+                          <input placeholder="e.g. 240 or -225" value={form.pnl} onChange={e=>setF("pnl",e.target.value)}/>
+                        )}
+                        {hasSpec&&<OpenTcHint form={form} spec={spec}/>}
+                      </div>
+                    );
+                  })()}
+                </div>
+                <div>
+                  <FL>Reason / Rationale</FL>
+                  <textarea placeholder="Why did you take this trade?" value={form.reason} onChange={e=>setForm(p=>({...p,reason:e.target.value}))} style={{minHeight:58}}/>
+                </div>
+              </div>
+
+              <SectionHead>Learnings</SectionHead>
+              <div style={{marginBottom:26}}>
+                <textarea placeholder="What did you learn? What would you do differently?" value={form.learnings} onChange={e=>setForm(p=>({...p,learnings:e.target.value}))}/>
+              </div>
+
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={save} style={{padding:"12px 32px",background:NAVY,color:"#fff",border:"none",borderRadius:8,fontSize:14,fontWeight:600}}>
+                  {editId?"Save Changes":"Log Trade"}
+                </button>
+                <button onClick={()=>{setView("journal");setForm(EMPTY);setEditId(null);}} style={{padding:"12px 22px",background:G100,color:G600,border:"none",borderRadius:8,fontSize:14,fontWeight:500}}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── PRODUCTS ── */}
+        {view==="products"&&(
+          <div className="fade">
+            <div style={{marginBottom:28}}>
+              <div style={{fontFamily:"'Playfair Display',serif",fontSize:32,fontWeight:700,color:NAVY}}>Product Settings</div>
+              <div style={{fontSize:13,color:G400,marginTop:5}}>Manage tick size, tick value and transaction cost — P&L auto-calculates for any configured product</div>
+            </div>
+
+            <div className="card" style={{overflow:"hidden",marginBottom:32}}>
+              <div style={{display:"grid",gridTemplateColumns:"110px 100px 110px 110px 80px 1fr 90px",padding:"11px 20px",background:NAVY,gap:12,alignItems:"center"}}>
+                {["Product","Tick Size","Tick Value","TC / Lot / Leg","Currency","Note",""].map((h,i)=>(
+                  <div key={i} style={{fontSize:10,letterSpacing:"0.1em",textTransform:"uppercase",color:GOLD2,fontWeight:600}}>{h}</div>
+                ))}
+              </div>
+              {productSpecs.map((p,i)=>(
+                <div key={p.name} style={{display:"grid",gridTemplateColumns:"110px 100px 110px 110px 80px 1fr 90px",padding:"12px 20px",gap:12,alignItems:"center",borderBottom:"1px solid "+G100,background:i%2===0?"#fff":G50}}>
+                  <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:14,fontWeight:700,color:NAVY}}>{p.name}</div>
+                  <div><input value={p.tickSize} onChange={e=>{const v=e.target.value;setProductSpecs(ps=>ps.map(x=>x.name===p.name?{...x,tickSize:v}:x));}} style={{padding:"6px 10px",fontSize:13,borderRadius:6}} placeholder="e.g. 1"/></div>
+                  <div><input value={p.tickValue} onChange={e=>{const v=e.target.value;setProductSpecs(ps=>ps.map(x=>x.name===p.name?{...x,tickValue:v}:x));}} style={{padding:"6px 10px",fontSize:13,borderRadius:6}} placeholder="e.g. 6.30"/></div>
+                  <div><input value={p.tc} onChange={e=>{const v=e.target.value;setProductSpecs(ps=>ps.map(x=>x.name===p.name?{...x,tc:v}:x));}} style={{padding:"6px 10px",fontSize:13,borderRadius:6}} placeholder="e.g. 5.80"/></div>
+                  <div>
+                    <select value={p.currency} onChange={e=>{const v=e.target.value;setProductSpecs(ps=>ps.map(x=>x.name===p.name?{...x,currency:v}:x));}} style={{padding:"6px 10px",fontSize:13,borderRadius:6}}>
+                      {["USD","MYR","EUR","GBP","JPY"].map(c=><option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div><input value={p.note} onChange={e=>{const v=e.target.value;setProductSpecs(ps=>ps.map(x=>x.name===p.name?{...x,note:v}:x));}} style={{padding:"6px 10px",fontSize:13,borderRadius:6}} placeholder="Optional description"/></div>
+                  <div style={{display:"flex",justifyContent:"flex-end"}}>
+                    <button onClick={()=>setConfirmDelete("prod_"+p.name)} style={{padding:"5px 12px",background:"#fff",color:RED,border:"1.5px solid #fca5a5",borderRadius:6,fontSize:12,fontWeight:500}}>Remove</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{fontSize:13,fontWeight:700,color:NAVY,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:14}}>Add New Product</div>
+            <div className="card" style={{padding:"24px 26px"}}>
+              <div style={{display:"grid",gridTemplateColumns:"110px 100px 110px 110px 80px 1fr",gap:14,marginBottom:18}}>
+                <div>
+                  <FL>Name</FL>
+                  <input value={newProd.name} onChange={e=>setNewProd(p=>({...p,name:e.target.value.toUpperCase()}))} placeholder="e.g. TF" style={{padding:"9px 12px",fontSize:13}}/>
+                </div>
+                <div>
+                  <FL>Tick Size</FL>
+                  <input value={newProd.tickSize} onChange={e=>setNewProd(p=>({...p,tickSize:e.target.value}))} placeholder="e.g. 0.1" style={{padding:"9px 12px",fontSize:13}}/>
+                </div>
+                <div>
+                  <FL>Tick Value</FL>
+                  <input value={newProd.tickValue} onChange={e=>setNewProd(p=>({...p,tickValue:e.target.value}))} placeholder="e.g. 10.00" style={{padding:"9px 12px",fontSize:13}}/>
+                </div>
+                <div>
+                  <FL>TC / Lot</FL>
+                  <input value={newProd.tc} onChange={e=>setNewProd(p=>({...p,tc:e.target.value}))} placeholder="e.g. 5.80" style={{padding:"9px 12px",fontSize:13}}/>
+                </div>
+                <div>
+                  <FL>Currency</FL>
+                  <select value={newProd.currency} onChange={e=>setNewProd(p=>({...p,currency:e.target.value}))} style={{padding:"9px 12px",fontSize:13}}>
+                    {["USD","MYR","EUR","GBP","JPY"].map(c=><option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <FL>Note (optional)</FL>
+                  <input value={newProd.note} onChange={e=>setNewProd(p=>({...p,note:e.target.value}))} placeholder="e.g. Rubber Spread" style={{padding:"9px 12px",fontSize:13}}/>
+                </div>
+              </div>
+              <button onClick={()=>{
+                if(!newProd.name){showToast("Product name is required",true);return;}
+                if(productSpecs.find(p=>p.name===newProd.name)){showToast(newProd.name+" already exists",true);return;}
+                setProductSpecs(ps=>[...ps,{...newProd,tickSize:parseFloat(newProd.tickSize)||0,tickValue:parseFloat(newProd.tickValue)||0,tc:parseFloat(newProd.tc)||0}]);
+                setNewProd({name:"",tickSize:"",tickValue:"",tc:"",currency:"USD",note:""});
+                showToast("Product added successfully");
+              }} style={{padding:"11px 28px",background:NAVY,color:"#fff",border:"none",borderRadius:8,fontSize:13,fontWeight:600}}>
+                Add Product
+              </button>
+            </div>
+
+            <div style={{marginTop:20,background:GOLDBG,border:"1px solid #e8d9b0",borderLeft:"3px solid "+GOLD,borderRadius:8,padding:"14px 18px"}}>
+              <div style={{fontSize:12,color:"#92721c",fontWeight:600,marginBottom:4}}>💡 How Auto P&L works</div>
+              <div style={{fontSize:13,color:G700,lineHeight:1.7}}>
+                TC is entered as <strong>cost per lot per leg</strong> (e.g. $2.90 for FCPO).<br/>
+                <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>Open trade:  Gross − (Lots × 1 × TC)  — entry leg only</span><br/>
+                <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>Closed trade: Gross − (Lots × 2 × TC)  — entry + exit legs</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
+      <div style={{borderTop:"1px solid "+G200,padding:"16px 28px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#fff"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <Crest sz={20}/>
+          <span style={{fontSize:13,fontWeight:600,color:NAVY}}>The Imperial Crest</span>
+          <span style={{width:4,height:4,borderRadius:"50%",background:G300}}/>
+          <span style={{fontSize:12,color:GOLD,fontWeight:500}}>Futures Division</span>
+        </div>
+        <span style={{fontSize:12,color:G400}}>Nikit Singh Parihar</span>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
